@@ -113,6 +113,7 @@ jobs:
           CGO_ENABLED=1 GOOS="${GOOS}" GOARCH="${GOARCH}" CC="${CC}" \
             go build -trimpath -ldflags="-s -w" -o "${package_dir}/cpa-usage-keeper" ./cmd/server/main.go
           cp .env.example README.md README.en.md LICENSE CONTRIBUTORS.md "${package_dir}/"
+          cp deploy/linux/cpa-usage-keeper.service "${package_dir}/"
           tar -czf "dist/${package_name}.tar.gz" -C dist "${package_name}"
 
       - name: Upload binary package artifact

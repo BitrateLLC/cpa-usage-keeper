@@ -1,0 +1,17 @@
+[Unit]
+Description=CPA Usage Keeper
+Documentation=https://github.com/Willxup/cpa-usage-keeper
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# The README installation command replaces this placeholder with the package directory.
+WorkingDirectory=__CPA_USAGE_KEEPER_DIR__
+ExecStart=/bin/sh -c 'exec ./cpa-usage-keeper'
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

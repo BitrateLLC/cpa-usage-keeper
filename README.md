@@ -15,6 +15,7 @@
 - 内置 React Dashboard
 - 可选密码登录保护
 - SQLite 数据库本地备份与保留策略
+- Linux systemd 服务文件
 - Docker / Docker Compose 部署
 
 ## 项目结构
@@ -128,6 +129,57 @@ npm --prefix ./web run test
 npm --prefix ./web run lint
 npm --prefix ./web run typecheck
 npm --prefix ./web run build
+```
+
+## Linux 二进制运行
+
+### 下载
+
+在 [Releases](https://github.com/Willxup/cpa-usage-keeper/releases/latest) 下载对应架构的 Linux 二进制包，或使用命令行下载：
+
+```bash
+curl -L -o cpa-usage-keeper.tar.gz "<替换为 Linux 二进制包下载地址>"
+mkdir -p cpa-usage-keeper
+tar -xzf cpa-usage-keeper.tar.gz -C cpa-usage-keeper --strip-components=1
+cd cpa-usage-keeper
+```
+
+请在 Releases 页面复制 `linux_amd64` 或 `linux_arm64` 包的下载地址，并替换上面命令中的占位符。
+
+### 配置
+
+复制配置模板并编辑，具体配置项参考上方“配置”章节：
+
+```bash
+cp .env.example .env
+vim .env
+```
+
+### 直接运行
+
+```bash
+./cpa-usage-keeper
+```
+
+### systemd 常驻运行
+
+Linux 二进制包内置 `cpa-usage-keeper.service`，可直接注册为 `systemd` 服务。启动后进程由 systemd 托管，关闭 SSH 或终端不会结束进程。
+
+`systemd` 的 `WorkingDirectory` 需要绝对路径。下面的 `sed` 命令会把当前目录自动写入 service 文件：
+
+```bash
+sudo cp cpa-usage-keeper.service /etc/systemd/system/cpa-usage-keeper.service # 复制 service 文件到 systemd 目录
+sudo sed -i "s|__CPA_USAGE_KEEPER_DIR__|$(pwd)|g" /etc/systemd/system/cpa-usage-keeper.service # 写入当前目录作为 WorkingDirectory
+sudo systemctl daemon-reload # 重新加载 systemd 配置
+sudo systemctl enable --now cpa-usage-keeper # 设置开机自启并立即启动服务
+```
+
+常用命令：
+
+```bash
+sudo systemctl status cpa-usage-keeper # 查看服务状态
+sudo journalctl -u cpa-usage-keeper -f # 实时查看服务日志
+sudo systemctl restart cpa-usage-keeper # 重启服务
 ```
 
 ## Docker

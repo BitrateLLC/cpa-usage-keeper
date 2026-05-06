@@ -15,6 +15,7 @@ It relies on [CLIProxyAPI (CPA)](https://github.com/router-for-me/CLIProxyAPI) a
 - Built-in React dashboard
 - Optional password login protection
 - Local SQLite database backups with retention
+- Linux systemd service file
 - Docker / Docker Compose deployment
 
 ## Project Structure
@@ -128,6 +129,57 @@ npm --prefix ./web run test
 npm --prefix ./web run lint
 npm --prefix ./web run typecheck
 npm --prefix ./web run build
+```
+
+## Linux Binary Service
+
+### Download
+
+Download the Linux binary package for your architecture from [Releases](https://github.com/Willxup/cpa-usage-keeper/releases/latest), or use the command line:
+
+```bash
+curl -L -o cpa-usage-keeper.tar.gz "<replace-with-linux-binary-download-url>"
+mkdir -p cpa-usage-keeper
+tar -xzf cpa-usage-keeper.tar.gz -C cpa-usage-keeper --strip-components=1
+cd cpa-usage-keeper
+```
+
+Copy the `linux_amd64` or `linux_arm64` package URL from Releases, then replace the placeholder in the command above.
+
+### Configure
+
+Copy and edit the example config. See the Configuration section above for the available options:
+
+```bash
+cp .env.example .env
+vim .env
+```
+
+### Run Directly
+
+```bash
+./cpa-usage-keeper
+```
+
+### Run With systemd
+
+The Linux binary package includes `cpa-usage-keeper.service`, which can be registered directly as a `systemd` service. After it starts, systemd keeps the process running after SSH or terminal sessions close.
+
+`systemd` requires an absolute `WorkingDirectory`. The `sed` command below writes the current directory into the service file automatically:
+
+```bash
+sudo cp cpa-usage-keeper.service /etc/systemd/system/cpa-usage-keeper.service # Copy the service file into the systemd unit directory.
+sudo sed -i "s|__CPA_USAGE_KEEPER_DIR__|$(pwd)|g" /etc/systemd/system/cpa-usage-keeper.service # Write the current directory as WorkingDirectory.
+sudo systemctl daemon-reload # Reload systemd unit files.
+sudo systemctl enable --now cpa-usage-keeper # Enable startup on boot and start the service now.
+```
+
+Useful commands:
+
+```bash
+sudo systemctl status cpa-usage-keeper # Show service status.
+sudo journalctl -u cpa-usage-keeper -f # Follow service logs.
+sudo systemctl restart cpa-usage-keeper # Restart the service.
 ```
 
 ## Docker
