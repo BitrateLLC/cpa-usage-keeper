@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildOverviewCostTrendSeries } from './CostTrendChart';
-import { buildTokenBreakdownChartSeries } from './TokenBreakdownChart';
-import { buildHourlyTokenBreakdown } from '@/utils/usage';
+import { buildTokenBreakdownChartOptions, buildTokenBreakdownChartSeries } from './TokenBreakdownChart';
+import { buildHourlyTokenBreakdown, formatCompactTokenValue } from '@/utils/usage';
 import { buildChartData, filterUsageByWindow } from '@/utils/usage';
 import type { UsageOverviewResponse, UsageEvent, UsageSnapshot } from '@/lib/types';
+import { buildChartOptions } from '@/utils/usage/chartConfig';
 
 const overviewUsage: UsageOverviewResponse = {
   usage: {
@@ -450,6 +451,51 @@ describe('overview chart data flow', () => {
 
     expect(series.labels).toHaveLength(5);
     expect(series.dataByCategory.input).toEqual([0, 0, 100, 0, 200]);
+  });
+
+  it('formats tokens trend axis and tooltip values with K/M/B units', () => {
+    const options = buildChartOptions({
+      period: 'hour',
+      labels: ['00:00'],
+      isDark: false,
+      isMobile: false,
+      valueFormatter: (value) => formatCompactTokenValue(value),
+      tooltipValueFormatter: (value) => formatCompactTokenValue(value, true),
+    });
+
+    const tickCallback = options.scales?.y?.ticks?.callback;
+    const tooltipLabel = options.plugins?.tooltip?.callbacks?.label;
+
+    expect(typeof tickCallback).toBe('function');
+    expect(tickCallback?.call({} as never, 1_500_000, 0, [])).toBe('1.50M');
+    expect(typeof tooltipLabel).toBe('function');
+    expect(tooltipLabel?.({
+      dataset: { label: 'All' },
+      parsed: { y: 2_500_000_000 },
+    } as never)).toBe('All: 2.50B tokens');
+  });
+
+  it('formats token breakdown axis and tooltip values with K/M/B units', () => {
+    const options = buildTokenBreakdownChartOptions({
+      period: 'hour',
+      labels: ['00:00'],
+      isDark: false,
+      isMobile: false,
+      stacked: true,
+    });
+
+    const tickCallback = options.scales?.y?.ticks?.callback;
+    const tooltipLabel = options.plugins?.tooltip?.callbacks?.label;
+
+    expect(options.scales?.y?.stacked).toBe(true);
+    expect(options.scales?.x?.stacked).toBe(true);
+    expect(typeof tickCallback).toBe('function');
+    expect(tickCallback?.call({} as never, 1_500_000, 0, [])).toBe('1.50M');
+    expect(typeof tooltipLabel).toBe('function');
+    expect(tooltipLabel?.({
+      dataset: { label: 'Input' },
+      parsed: { y: 2_500_000_000 },
+    } as never)).toBe('Input: 2.50B tokens');
   });
 
   it('keeps overview hour charts capped to the latest 24 hours even when the query range is 7d', () => {

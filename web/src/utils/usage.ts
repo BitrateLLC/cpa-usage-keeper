@@ -250,6 +250,11 @@ export function formatCompactNumber(value: number): string {
   return formatScaled(value / 1_000_000_000, 'B');
 }
 
+export function formatCompactTokenValue(value: number, withUnit = false): string {
+  const formatted = formatCompactNumber(value);
+  return withUnit ? `${formatted} tokens` : formatted;
+}
+
 export function formatFixedTwoDecimals(value: number): string {
   return new Intl.NumberFormat(undefined, {
     minimumFractionDigits: 2,

@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
+import type { ChartOptions } from 'chart.js';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import type { TokenCategory } from '@/utils/usage';
+import { formatCompactTokenValue, type TokenCategory } from '@/utils/usage';
 import { buildChartOptions, getHourChartMinWidth } from '@/utils/usage/chartConfig';
 import type { UsageOverviewPayload } from './hooks/useUsageData';
 import styles from '@/pages/UsagePage.module.scss';
@@ -101,6 +102,52 @@ export interface TokenBreakdownChartProps {
   preferredPeriod?: TokenBreakdownChartPeriod;
 }
 
+export const buildTokenBreakdownChartOptions = ({
+  period,
+  labels,
+  isDark,
+  isMobile,
+  stacked = false,
+}: {
+  period: TokenBreakdownChartPeriod;
+  labels: string[];
+  isDark: boolean;
+  isMobile: boolean;
+  stacked?: boolean;
+}): ChartOptions<'line'> => {
+  const baseOptions = buildChartOptions({ period, labels, isDark, isMobile });
+  return {
+    ...baseOptions,
+    plugins: {
+      ...baseOptions.plugins,
+      tooltip: {
+        ...baseOptions.plugins?.tooltip,
+        callbacks: {
+          label: (context) => {
+            const label = context.dataset.label ? `${context.dataset.label}: ` : '';
+            return `${label}${formatCompactTokenValue(Number(context.parsed.y ?? 0), true)}`;
+          },
+        },
+      },
+    },
+    scales: {
+      ...baseOptions.scales,
+      y: {
+        ...baseOptions.scales?.y,
+        stacked,
+        ticks: {
+          ...baseOptions.scales?.y?.ticks,
+          callback: (value) => formatCompactTokenValue(Number(value)),
+        },
+      },
+      x: {
+        ...baseOptions.scales?.x,
+        stacked,
+      },
+    },
+  };
+};
+
 export function TokenBreakdownChart({
   usage,
   loading,
@@ -140,21 +187,13 @@ export function TokenBreakdownChart({
       }))
     };
 
-    const baseOptions = buildChartOptions({ period, labels: series.labels, isDark, isMobile });
-    const options = {
-      ...baseOptions,
-      scales: {
-        ...baseOptions.scales,
-        y: {
-          ...baseOptions.scales?.y,
-          stacked: true
-        },
-        x: {
-          ...baseOptions.scales?.x,
-          stacked: true
-        }
-      }
-    };
+    const options = buildTokenBreakdownChartOptions({
+      period,
+      labels: series.labels,
+      isDark,
+      isMobile,
+      stacked: true,
+    });
 
     return { chartData: data, chartOptions: options };
   }, [usage, period, isDark, isMobile, hourWindowHours, endMs, t]);

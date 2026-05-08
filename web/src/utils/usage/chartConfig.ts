@@ -21,6 +21,8 @@ export interface ChartConfigOptions {
   labels: string[];
   isDark: boolean;
   isMobile: boolean;
+  valueFormatter?: (value: number) => string;
+  tooltipValueFormatter?: (value: number) => string;
 }
 
 /**
@@ -30,7 +32,9 @@ export function buildChartOptions({
   period,
   labels,
   isDark,
-  isMobile
+  isMobile,
+  valueFormatter,
+  tooltipValueFormatter
 }: ChartConfigOptions): ChartOptions<'line'> {
   const pointRadius = isMobile && period === 'hour' ? 0 : isMobile ? 2 : 4;
   const tickFontSize = isMobile ? 10 : 12;
@@ -60,7 +64,16 @@ export function buildChartOptions({
         borderWidth: 1,
         padding: 10,
         displayColors: true,
-        usePointStyle: true
+        usePointStyle: true,
+        callbacks: (valueFormatter || tooltipValueFormatter)
+          ? {
+              label: (context) => {
+                const label = context.dataset.label ? `${context.dataset.label}: ` : '';
+                const formatter = tooltipValueFormatter ?? valueFormatter;
+                return `${label}${formatter ? formatter(Number(context.parsed.y ?? 0)) : ''}`;
+              }
+            }
+          : undefined
       }
     },
     scales: {
@@ -113,7 +126,10 @@ export function buildChartOptions({
         },
         ticks: {
           color: tickColor,
-          font: { size: tickFontSize }
+          font: { size: tickFontSize },
+          callback: valueFormatter
+            ? (value) => valueFormatter(Number(value))
+            : undefined
         }
       }
     },

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { ChartOptions } from 'chart.js';
-import { buildChartData, type ChartData } from '@/utils/usage';
+import { buildChartData, formatCompactTokenValue, type ChartData } from '@/utils/usage';
 import { buildChartOptions } from '@/utils/usage/chartConfig';
 import type { UsageOverviewPayload } from './useUsageData';
 import type { UsageOverviewSeries } from '@/lib/types';
@@ -89,7 +89,9 @@ export function useChartData({
         period: tokensPeriod,
         labels: tokensChartData.labels,
         isDark,
-        isMobile
+        isMobile,
+        valueFormatter: (value) => formatCompactTokenValue(value),
+        tooltipValueFormatter: (value) => formatCompactTokenValue(value, true)
       }),
     [tokensPeriod, tokensChartData.labels, isDark, isMobile]
   );
