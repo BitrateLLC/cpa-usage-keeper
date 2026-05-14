@@ -93,6 +93,19 @@ func TestCPAAPIKeyOptionsReturnActiveLabels(t *testing.T) {
 	if len(parsed.Options) != 1 || parsed.Options[0].ID != "1" || parsed.Options[0].Label != "Primary Key" {
 		t.Fatalf("unexpected options: %+v", parsed.Options)
 	}
+	var raw struct {
+		Options []map[string]any `json:"options"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw response: %v", err)
+	}
+	for _, option := range raw.Options {
+		for _, key := range []string{"keyAlias", "displayKey", "lastSyncedAt"} {
+			if _, ok := option[key]; ok {
+				t.Fatalf("options response included settings-only field %q: %s", key, resp.Body.String())
+			}
+		}
+	}
 }
 
 func TestUpdateCPAAPIKeyAliasUpdatesAndClearsAlias(t *testing.T) {

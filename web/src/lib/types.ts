@@ -318,7 +318,10 @@ export interface CpaApiKeySettingsItem {
   lastSyncedAt: string | null
 }
 
-export type CpaApiKeyOption = CpaApiKeySettingsItem
+export interface CpaApiKeyOption {
+  id: string
+  label: string
+}
 
 export interface CpaApiKeysResponse {
   items: CpaApiKeySettingsItem[]
