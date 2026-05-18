@@ -156,7 +156,7 @@ describe('UsagePage toolbar styles', () => {
     expect(analysisPanelSource).not.toContain("'#b28b67'")
     expect(analysisPanelSource).not.toContain("'#7f756b'")
     expect(analysisPanelSource).toContain("import { Bar, Doughnut } from 'react-chartjs-2'")
-    expect(analysisPanelSource).toContain("import type { ChartData, ChartOptions, ExternalTooltipHandler, Plugin } from 'chart.js'")
+    expect(analysisPanelSource).toContain("import type { Chart, ChartData, ChartOptions, Plugin, TooltipModel } from 'chart.js'")
     expect(analysisPanelSource).not.toContain("from 'recharts'")
     expect(analysisPanelSource).toContain('buildAnalysisTokenChartOptions')
     expect(analysisPanelSource).toContain('buildTokenLegendItems')

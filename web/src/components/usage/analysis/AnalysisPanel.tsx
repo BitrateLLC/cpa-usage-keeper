@@ -1,6 +1,6 @@
 import { useMemo, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ChartData, ChartOptions, ExternalTooltipHandler, Plugin } from 'chart.js';
+import type { Chart, ChartData, ChartOptions, Plugin, TooltipModel } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import type { AnalysisCompositionItem, AnalysisHeatmapCell, AnalysisResponse, AnalysisTokenUsageBucket } from '@/lib/types';
 import { formatCompactNumber } from '@/utils/usage';
@@ -291,7 +291,7 @@ function getCompositionTooltipElement() {
   return tooltipEl;
 }
 
-function createCompositionTooltipHandler(chartTheme: ChartTheme): ExternalTooltipHandler<'doughnut'> {
+function createCompositionTooltipHandler(chartTheme: ChartTheme): (args: { chart: Chart; tooltip: TooltipModel<'doughnut'> }) => void {
   return ({ chart, tooltip }) => {
     if (typeof document === 'undefined') return;
     const tooltipEl = getCompositionTooltipElement();
