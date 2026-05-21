@@ -17,6 +17,7 @@ export interface StatusResponse {
   timezone: string
   version?: string
   updateCheckEnabled?: boolean
+  cpa_management_url?: string
   last_run_at?: string
   last_error?: string
   last_warning?: string

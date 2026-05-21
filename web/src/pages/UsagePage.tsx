@@ -122,6 +122,8 @@ export const shouldShowApiKeyFilter = (tab: UsageTab) => shouldShowRangeControls
 
 export const shouldShowUpdateCheckButton = (status: Pick<StatusResponse, 'updateCheckEnabled'> | null) => status?.updateCheckEnabled === true;
 
+export const getBackToCPALinkURL = (status: Pick<StatusResponse, 'cpa_management_url'> | null) => status?.cpa_management_url ?? '';
+
 export const getUpdateCheckToastDuration = (kind: 'success' | 'info' | 'error') => (kind === 'error' ? 6_000 : 4_000);
 
 export const shouldAutoRefreshUsageTab = ({
@@ -558,6 +560,7 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
     if (updateCheckNotice.kind === 'success') return styles.updateCheckToastSuccess;
     return styles.updateCheckToastInfo;
   })() : '';
+  const cpaManagementURL = useMemo(() => getBackToCPALinkURL(status), [status]);
 
   const resolvedRangeStartMs = toTimestampMs(usage?.range_start);
   const resolvedRangeEndMs = toTimestampMs(usage?.range_end);
@@ -1285,11 +1288,32 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
               </div>
             )}
 
-            {lastSyncAt && (
+            {(cpaManagementURL || lastSyncAt) && (
               <div className={styles.toolbarMetaRow}>
-                <span className={styles.lastRefreshed}>
-                  {t('usage_stats.last_updated')}: {lastSyncAt.toLocaleTimeString()}
-                </span>
+                {lastSyncAt && (
+                  <span className={styles.lastRefreshed}>
+                    {t('usage_stats.last_updated')}: {lastSyncAt.toLocaleTimeString()}
+                  </span>
+                )}
+                {cpaManagementURL && (
+                  <div className={styles.toolbarMetaRight}>
+                    <a
+                      className={styles.backToCpaLink}
+                      href={cpaManagementURL}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={t('usage_stats.back_to_cpa_aria')}
+                    >
+                      <span>{t('usage_stats.back_to_cpa')}</span>
+                      <span className={styles.backToCpaIcon} aria-hidden="true">
+                        <svg viewBox="0 0 16 16" focusable="false">
+                          <path d="M6 4h6v6" />
+                          <path d="M12 4 5 11" />
+                        </svg>
+                      </span>
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 
