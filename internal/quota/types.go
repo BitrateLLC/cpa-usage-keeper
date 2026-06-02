@@ -62,10 +62,12 @@ type AntigravityQuotaPayload struct {
 }
 
 type CodexUsageWindow struct {
-	UsedPercent        float64 `json:"usedPercent,omitempty"`
-	LimitWindowSeconds int64   `json:"limitWindowSeconds,omitempty"`
-	ResetAfterSeconds  int64   `json:"resetAfterSeconds,omitempty"`
-	ResetAt            int64   `json:"resetAt,omitempty"`
+	UsedPercent        float64  `json:"usedPercent,omitempty"`
+	LimitWindowSeconds int64    `json:"limitWindowSeconds,omitempty"`
+	ResetAfterSeconds  int64    `json:"resetAfterSeconds,omitempty"`
+	ResetAt            int64    `json:"resetAt,omitempty"`
+	WindowUsageTokens  *int64   `json:"window_usage_tokens,omitempty"`
+	WindowUsageCost    *float64 `json:"window_usage_cost,omitempty"`
 }
 
 type CodexRateLimitInfo struct {

@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"cpa-usage-keeper/internal/repository"
@@ -21,8 +22,16 @@ func (s *Service) attachWindowUsageStats(ctx context.Context, authIndex string, 
 	}
 	// 同一个 quota response 可能包含多个相同窗口，按 start/end 去重后再查询数据库。
 	statsByWindow := make(map[quotaUsageWindowKey]repository.UsageWindowStats)
-	// 遍历每一条 quota row，只有明确窗口的 row 才会补 token/cost。
+	// 遍历每一条 quota row，只对没有完整 provider 用量的普通窗口补 token/cost。
 	for index := range response.Quota {
+		// Pro 等上游可能已经返回窗口 token/cost；非 window scope 不用本地 auth 级统计兜底。
+		if !shouldBackfillWindowUsageStats(response.Quota[index]) {
+			// 保留 provider 原始字段，避免覆盖 additional/code_review 等专项限额。
+			continue
+		}
+		// provider pair 不完整时先丢弃单边字段，避免 fallback 失败后输出不同口径的半套数据。
+		response.Quota[index].WindowUsageTokens = nil
+		response.Quota[index].WindowUsageCost = nil
 		// 根据 reset_at 和 window.seconds 计算该 row 对应的统计窗口。
 		windowStart, windowEnd, ok := quotaRowUsageWindow(response.Quota[index], now)
 		// 没有明确窗口或 reset_at 无法解析时跳过该 row。
@@ -48,17 +57,35 @@ func (s *Service) attachWindowUsageStats(ctx context.Context, authIndex string, 
 			// 把查询结果放入本次响应缓存，供相同窗口的其它 row 复用。
 			statsByWindow[key] = stats
 		}
-		// 复制 tokens 值，确保指针指向当前 row 独立变量。
+		// 复制 tokens/cost 值，确保指针指向当前 row 独立变量。
 		tokens := stats.Tokens
-		// 复制 cost 值，确保指针指向当前 row 独立变量。
 		cost := stats.Cost
-		// 写入窗口 token，前端在进度条下方展示。
+		// token 和 cost 必须来自同一统计口径；provider pair 不完整时整对使用本地统计。
 		response.Quota[index].WindowUsageTokens = &tokens
-		// 写入窗口 cost，前端在进度条下方展示。
 		response.Quota[index].WindowUsageCost = &cost
 	}
 	// 返回已经补充窗口用量的 quota 响应。
 	return response
+}
+
+func shouldBackfillWindowUsageStats(row QuotaRow) bool {
+	// provider 已给完整窗口用量时直接信任上游，不再用 usage_events 覆盖。
+	if row.WindowUsageTokens != nil && row.WindowUsageCost != nil {
+		return false
+	}
+	// 本地 usage_events 兜底只适用于普通 5h/Weekly/Monthly window scope。
+	if !strings.EqualFold(strings.TrimSpace(row.Scope), "window") {
+		return false
+	}
+	if row.Window == nil || row.Window.Seconds == nil {
+		return false
+	}
+	switch *row.Window.Seconds {
+	case quotaWindowFiveHourSeconds, quotaWindowSevenDaySeconds, quotaWindowThirtyDaySeconds:
+		return true
+	default:
+		return false
+	}
 }
 
 func quotaRowUsageWindow(row QuotaRow, now time.Time) (time.Time, time.Time, bool) {

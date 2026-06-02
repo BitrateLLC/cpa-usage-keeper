@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"cpa-usage-keeper/internal/cpa/dto/apicall"
@@ -75,6 +76,60 @@ func TestCodexProviderUsesAccountIDForUsageRequest(t *testing.T) {
 	}
 }
 
+func TestCodexProviderPreservesProWindowUsageFields(t *testing.T) {
+	codexUsageJSON := `{"plan_type":"pro","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{"used_percent":3,"limit_window_seconds":18000,"reset_after_seconds":13422,"reset_at":1780331042,"window_usage_tokens":11368055,"window_usage_cost":14.83442025},"secondary_window":{"used_percent":15,"limit_window_seconds":604800,"reset_after_seconds":528051,"reset_at":1780845672,"window_usage_tokens":623087989,"window_usage_cost":614.6869810999999}},"additional_rate_limits":[{"limit_name":"GPT-5.3-Codex-Spark","metered_feature":"codex_bengalfox","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{"used_percent":0,"limit_window_seconds":18000,"reset_after_seconds":17698,"reset_at":1780335318,"window_usage_tokens":393311,"window_usage_cost":0.458464},"secondary_window":{"used_percent":0,"limit_window_seconds":604800,"reset_after_seconds":568595,"reset_at":1780886215,"window_usage_tokens":418184136,"window_usage_cost":405.1611734}}}]}`
+	caller := &recordingManagementCaller{responses: []*apicall.Response{{
+		StatusCode: 200,
+		BodyText:   codexUsageJSON,
+		Body:       json.RawMessage(codexUsageJSON),
+	}}}
+	provider := quota.NewCodexProvider(caller, quota.DefaultProviderConfigs().Codex)
+
+	output, err := provider.Check(context.Background(), quota.ProviderInput{Identity: entities.UsageIdentity{Identity: "codex-pro-auth"}})
+	if err != nil {
+		t.Fatalf("Check returned error: %v", err)
+	}
+	rows := quota.NormalizeQuotaRows(output)
+
+	primary := findCodexQuotaRow(t, rows, "rate_limit.primary_window")
+	assertWindowUsage(t, primary, 11368055, 14.83442025)
+	secondary := findCodexQuotaRow(t, rows, "rate_limit.secondary_window")
+	assertWindowUsage(t, secondary, 623087989, 614.6869810999999)
+	additional := findCodexQuotaRow(t, rows, "additional_rate_limits.GPT-5.3-Codex-Spark.primary_window")
+	assertWindowUsage(t, additional, 393311, 0.458464)
+	if additional.Scope != "additional" || additional.Metric != "codex_bengalfox" || additional.PlanType != "pro" {
+		t.Fatalf("expected additional row metadata to survive normalization, got %#v", additional)
+	}
+	additionalSecondary := findCodexQuotaRow(t, rows, "additional_rate_limits.GPT-5.3-Codex-Spark.secondary_window")
+	assertWindowUsage(t, additionalSecondary, 418184136, 405.1611734)
+	if additionalSecondary.Scope != "additional" || additionalSecondary.Metric != "codex_bengalfox" || additionalSecondary.PlanType != "pro" {
+		t.Fatalf("expected additional secondary row metadata to survive normalization, got %#v", additionalSecondary)
+	}
+}
+
+func TestCodexProviderTreatsNullWindowUsageAsMissingAndPreservesCamelCaseZero(t *testing.T) {
+	codexUsageJSON := `{"plan_type":"pro","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{"used_percent":0,"limit_window_seconds":18000,"window_usage_tokens":null,"window_usage_cost":null},"secondary_window":{"used_percent":0,"limit_window_seconds":604800,"windowUsageTokens":0,"windowUsageCost":0}}}`
+	caller := &recordingManagementCaller{responses: []*apicall.Response{{
+		StatusCode: 200,
+		BodyText:   codexUsageJSON,
+		Body:       json.RawMessage(codexUsageJSON),
+	}}}
+	provider := quota.NewCodexProvider(caller, quota.DefaultProviderConfigs().Codex)
+
+	output, err := provider.Check(context.Background(), quota.ProviderInput{Identity: entities.UsageIdentity{Identity: "codex-pro-auth"}})
+	if err != nil {
+		t.Fatalf("Check returned error: %v", err)
+	}
+	rows := quota.NormalizeQuotaRows(output)
+
+	primary := findCodexQuotaRow(t, rows, "rate_limit.primary_window")
+	if primary.WindowUsageTokens != nil || primary.WindowUsageCost != nil {
+		t.Fatalf("expected null provider window usage to stay missing, got tokens=%#v cost=%#v", primary.WindowUsageTokens, primary.WindowUsageCost)
+	}
+	secondary := findCodexQuotaRow(t, rows, "rate_limit.secondary_window")
+	assertWindowUsage(t, secondary, 0, 0)
+}
+
 func TestCodexProviderOmitsAccountIDHeaderWhenMissing(t *testing.T) {
 	caller := &recordingManagementCaller{responses: []*apicall.Response{{
 		StatusCode: 200,
@@ -109,5 +164,26 @@ func TestCodexProviderRejectsNonSuccessUsageResponse(t *testing.T) {
 	}})
 	if err == nil || err.Error() != "HTTP 429: rate limited" {
 		t.Fatalf("expected target HTTP message, got %v", err)
+	}
+}
+
+func findCodexQuotaRow(t *testing.T, rows []quota.QuotaRow, key string) quota.QuotaRow {
+	t.Helper()
+	for _, row := range rows {
+		if row.Key == key {
+			return row
+		}
+	}
+	t.Fatalf("missing quota row %q in %#v", key, rows)
+	return quota.QuotaRow{}
+}
+
+func assertWindowUsage(t *testing.T, row quota.QuotaRow, tokens int64, cost float64) {
+	t.Helper()
+	if row.WindowUsageTokens == nil || *row.WindowUsageTokens != tokens {
+		t.Fatalf("expected %s window usage tokens %d, got %#v", row.Key, tokens, row.WindowUsageTokens)
+	}
+	if row.WindowUsageCost == nil || math.Abs(*row.WindowUsageCost-cost) > 0.000000001 {
+		t.Fatalf("expected %s window usage cost %.8f, got %#v", row.Key, cost, row.WindowUsageCost)
 	}
 }

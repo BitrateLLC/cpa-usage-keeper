@@ -189,6 +189,44 @@ describe('credentialViewModels', () => {
     expect(rows[0].displayQuotas[0].windowUsage).toEqual({ tokens: '0', cost: '$0.00' })
   })
 
+  it('formats provider quota window usage with fixed compact units and US dollar decimals', () => {
+    const quotas = new Map<string, UsageQuotaRow[]>([
+      ['auth-1', [
+        { key: 'rate_limit.primary_window', label: '5h', usedPercent: 3, window_usage_tokens: 11_368_055, window_usage_cost: 14.83442025 },
+        { key: 'additional_rate_limits.GPT-5.3-Codex-Spark.primary_window', label: 'GPT-5.3-Codex-Spark 5h', usedPercent: 0, window_usage_tokens: 393_311, window_usage_cost: 0.458464 },
+      ]],
+    ])
+
+    const rows = buildAuthFileCredentialRows([identity({ identity: 'auth-1' })], quotas)
+
+    expect(rows[0].displayQuotas.map((quota) => quota.windowUsage)).toEqual([
+      { tokens: '11.37M', cost: '$14.83' },
+      { tokens: '393.31K', cost: '$0.46' },
+    ])
+  })
+
+  it('uses an explicit US locale for quota window cost formatting', () => {
+    const numberFormatSpy = vi.spyOn(Intl, 'NumberFormat')
+    try {
+      const quotas = new Map<string, UsageQuotaRow[]>([
+        ['auth-1', [
+          { key: 'rate_limit.primary_window', label: '5h', usedPercent: 3, window_usage_tokens: 11_368_055, window_usage_cost: 14.83442025 },
+        ]],
+      ])
+
+      buildAuthFileCredentialRows([identity({ identity: 'auth-1' })], quotas)
+
+      expect(numberFormatSpy).toHaveBeenCalledWith('en-US', expect.objectContaining({
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }))
+    } finally {
+      numberFormatSpy.mockRestore()
+    }
+  })
+
   it('uses normalized input token semantics for auth file cache rate', () => {
     const rows = buildAuthFileCredentialRows([
       identity({ identity: 'auth-claude', type: 'claude', input_tokens: 1000, cached_tokens: 600 }),

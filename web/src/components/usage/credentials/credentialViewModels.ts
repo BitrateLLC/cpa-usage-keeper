@@ -214,7 +214,7 @@ function quotaWindowUsage(row: UsageQuotaRow): QuotaWindowUsageDisplay | undefin
 
 function formatQuotaWindowCost(cost: number): string {
   // 限额条下方空间很紧，窗口成本统一展示两位小数，避免 0 显示成 0.0000。
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,

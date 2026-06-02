@@ -87,6 +87,8 @@ func parseCodexUsageWindow(object map[string]json.RawMessage) *CodexUsageWindow 
 		LimitWindowSeconds: intField(object, "limit_window_seconds", "limitWindowSeconds"),
 		ResetAfterSeconds:  intField(object, "reset_after_seconds", "resetAfterSeconds"),
 		ResetAt:            intField(object, "reset_at", "resetAt"),
+		WindowUsageTokens:  intPtrField(object, "window_usage_tokens", "windowUsageTokens"),
+		WindowUsageCost:    floatPtrField(object, "window_usage_cost", "windowUsageCost"),
 	}
 }
 
@@ -381,6 +383,9 @@ func floatPtrField(object map[string]json.RawMessage, keys ...string) *float64 {
 func floatValue(object map[string]json.RawMessage, keys ...string) (float64, bool) {
 	for _, key := range keys {
 		if raw, ok := object[key]; ok {
+			if strings.TrimSpace(string(raw)) == "null" {
+				continue
+			}
 			var number float64
 			if err := json.Unmarshal(raw, &number); err == nil {
 				return number, true
@@ -403,6 +408,15 @@ func intField(object map[string]json.RawMessage, keys ...string) int64 {
 		return 0
 	}
 	return int64(value)
+}
+
+func intPtrField(object map[string]json.RawMessage, keys ...string) *int64 {
+	value, ok := floatValue(object, keys...)
+	if !ok {
+		return nil
+	}
+	parsed := int64(value)
+	return &parsed
 }
 
 func boolField(object map[string]json.RawMessage, keys ...string) bool {
