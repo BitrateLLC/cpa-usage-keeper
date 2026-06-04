@@ -32,6 +32,16 @@ const usageWithBackendSeries: UsagePayload = {
       '2026-04-23T10:00:00Z': 0.2,
       '2026-04-23T11:00:00Z': 0.8,
     },
+    input_tokens: {
+      '2026-04-23T10:00:00Z': 100,
+      '2026-04-23T11:00:00Z': 400,
+    },
+    output_tokens: {},
+    cached_tokens: {
+      '2026-04-23T10:00:00Z': 25,
+      '2026-04-23T11:00:00Z': 0,
+    },
+    reasoning_tokens: {},
   },
 };
 
@@ -47,5 +57,28 @@ describe('buildUsageSparklineSeries', () => {
     expect(series.rpm).toEqual([2 / 60, 4 / 60]);
     expect(series.tpm).toEqual([200 / 60, 800 / 60]);
     expect(series.cost).toEqual([0.2, 0.8]);
+    expect(series.cachedRate).toEqual([25, 0]);
+  });
+
+  it('keeps cache rate at zero when a bucket has no input tokens', () => {
+    const series = buildUsageSparklineSeries({
+      usage: {
+        ...usageWithBackendSeries,
+        series: {
+          ...usageWithBackendSeries.series!,
+          requests: {
+            '2026-04-23T10:00:00Z': 1,
+          },
+          input_tokens: {
+            '2026-04-23T10:00:00Z': 0,
+          },
+          cached_tokens: {
+            '2026-04-23T10:00:00Z': 25,
+          },
+        },
+      },
+    });
+
+    expect(series.cachedRate).toEqual([0]);
   });
 });

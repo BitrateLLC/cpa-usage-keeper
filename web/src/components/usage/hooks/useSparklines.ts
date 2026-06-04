@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { calculateCacheRate } from '@/utils/usage';
 import type { UsageOverviewPayload } from './useUsageData';
 
 export interface SparklineData {
@@ -30,6 +31,7 @@ export interface UseSparklinesReturn {
   tokensSparkline: SparklineBundle | null;
   rpmSparkline: SparklineBundle | null;
   tpmSparkline: SparklineBundle | null;
+  cachedRateSparkline: SparklineBundle | null;
   costSparkline: SparklineBundle | null;
 }
 
@@ -39,17 +41,18 @@ export interface UsageSparklineSeries {
   tokens: number[];
   rpm: number[];
   tpm: number[];
+  cachedRate: number[];
   cost: number[];
 }
 
 export function buildUsageSparklineSeries({ usage }: Omit<UseSparklinesOptions, 'loading'>): UsageSparklineSeries {
   if (!usage?.series) {
-    return { labels: [], requests: [], tokens: [], rpm: [], tpm: [], cost: [] };
+    return { labels: [], requests: [], tokens: [], rpm: [], tpm: [], cachedRate: [], cost: [] };
   }
 
   const labels = Object.keys(usage.series.requests ?? {}).sort((a, b) => a.localeCompare(b));
   if (!labels.length) {
-    return { labels: [], requests: [], tokens: [], rpm: [], tpm: [], cost: [] };
+    return { labels: [], requests: [], tokens: [], rpm: [], tpm: [], cachedRate: [], cost: [] };
   }
 
   return {
@@ -58,6 +61,11 @@ export function buildUsageSparklineSeries({ usage }: Omit<UseSparklinesOptions, 
     tokens: labels.map((label) => Number(usage.series?.tokens?.[label] ?? 0)),
     rpm: labels.map((label) => Number(usage.series?.rpm?.[label] ?? 0)),
     tpm: labels.map((label) => Number(usage.series?.tpm?.[label] ?? 0)),
+    cachedRate: labels.map((label) => {
+      const inputTokens = Math.max(Number(usage.series?.input_tokens?.[label] ?? 0), 0);
+      const cachedTokens = Math.max(Number(usage.series?.cached_tokens?.[label] ?? 0), 0);
+      return calculateCacheRate({ inputTokens, cachedTokens }) ?? 0;
+    }),
     cost: labels.map((label) => Number(usage.series?.cost?.[label] ?? 0)),
   };
 }
@@ -117,6 +125,11 @@ export function useSparklines({ usage, loading }: UseSparklinesOptions): UseSpar
     [buildSparkline, series.labels, series.tpm]
   );
 
+  const cachedRateSparkline = useMemo(
+    () => buildSparkline({ labels: series.labels, data: series.cachedRate }, '#14b8a6', 'rgba(20, 184, 166, 0.18)'),
+    [buildSparkline, series.cachedRate, series.labels]
+  );
+
   const costSparkline = useMemo(
     () => buildSparkline({ labels: series.labels, data: series.cost }, '#f59e0b', 'rgba(245, 158, 11, 0.18)'),
     [buildSparkline, series.labels, series.cost]
@@ -127,6 +140,7 @@ export function useSparklines({ usage, loading }: UseSparklinesOptions): UseSpar
     tokensSparkline,
     rpmSparkline,
     tpmSparkline,
+    cachedRateSparkline,
     costSparkline
   };
 }

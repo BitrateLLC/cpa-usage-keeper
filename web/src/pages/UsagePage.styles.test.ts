@@ -18,11 +18,21 @@ const analysisPanelStyles = readSource(new URL('../components/usage/analysis/Ana
 const usageChartSource = readSource(new URL('../components/usage/UsageChart.tsx', import.meta.url))
 const tokenBreakdownChartSource = readSource(new URL('../components/usage/TokenBreakdownChart.tsx', import.meta.url))
 const costTrendChartSource = readSource(new URL('../components/usage/CostTrendChart.tsx', import.meta.url))
+const statCardsSource = readSource(new URL('../components/usage/StatCards.tsx', import.meta.url))
 
 describe('UsagePage toolbar styles', () => {
   it('keeps visible range controls content-sized in narrow layouts', () => {
     expect(usagePageStyles).toMatch(/\.timeRangeGroup\s*\{[\s\S]*?width:\s*fit-content;/)
     expect(usagePageStyles).toMatch(/\.timeRangeSelectControl\s*\{[\s\S]*?flex:\s*0 0 164px;/)
+  })
+
+  it('keeps overview stat cards in a two-plus-four desktop grid with a distinct cache-rate color', () => {
+    expect(usagePageStyles).toMatch(/\.statCard\s*\{[\s\S]*?grid-column:\s*span 3;/)
+    expect(usagePageStyles).toMatch(/\.statCard:nth-child\(-n \+ 2\)\s*\{[\s\S]*?grid-column:\s*span 6;/)
+    expect(usagePageStyles).toMatch(/\.statLabel\s*\{[\s\S]*?letter-spacing:\s*0;/)
+    expect(statCardsSource).toContain("key: 'cache-rate'")
+    expect(statCardsSource).toContain("accent: '#14b8a6'")
+    expect(statCardsSource.match(/accent:\s*'#[0-9a-f]{6}'/g)).toHaveLength(new Set(statCardsSource.match(/accent:\s*'#[0-9a-f]{6}'/g)).size)
   })
 
   it('keeps refresh controls outside the query filter layout', () => {

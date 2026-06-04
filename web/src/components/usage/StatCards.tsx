@@ -4,12 +4,15 @@ import { Line } from 'react-chartjs-2';
 import {
   IconDiamond,
   IconDollarSign,
+  IconPercent,
   IconSatellite,
   IconTimer,
   IconTrendingUp,
 } from '@/components/ui/icons';
 import {
+  calculateCacheRate,
   formatCompactNumber,
+  formatFixedTwoDecimals,
   formatPerMinuteValue,
   formatUsd,
 } from '@/utils/usage';
@@ -38,6 +41,7 @@ export interface StatCardsProps {
     tokens: SparklineBundle | null;
     rpm: SparklineBundle | null;
     tpm: SparklineBundle | null;
+    cachedRate: SparklineBundle | null;
     cost: SparklineBundle | null;
   };
 }
@@ -45,23 +49,37 @@ export interface StatCardsProps {
 interface StatCardMetrics {
   tokenBreakdown: { cachedTokens: number; reasoningTokens: number };
   rateStats: { rpm: number; tpm: number; windowMinutes: number; requestCount: number; tokenCount: number };
+  cacheRateStats: { cachedRate: number | null; cachedTokens: number; inputTokens: number };
   totalCost: number;
   costAvailable: boolean;
 }
+
+const safeNumber = (value: unknown): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const sumNumberRecord = (record?: Record<string, number>): number => (
+  Object.values(record ?? {}).reduce((sum, value) => sum + Math.max(safeNumber(value), 0), 0)
+);
 
 export function buildStatCardMetrics({ usage }: { usage: UsageOverviewPayload | null }): StatCardMetrics {
   if (!usage?.summary) {
     return {
       tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0 },
       rateStats: { rpm: 0, tpm: 0, windowMinutes: 1, requestCount: 0, tokenCount: 0 },
+      cacheRateStats: { cachedRate: null, cachedTokens: 0, inputTokens: 0 },
       totalCost: 0,
       costAvailable: false,
     };
   }
 
+  const cachedTokens = Math.max(safeNumber(usage.summary.cached_tokens), 0);
+  const inputTokens = sumNumberRecord(usage.series?.input_tokens);
+
   return {
     tokenBreakdown: {
-      cachedTokens: usage.summary.cached_tokens ?? 0,
+      cachedTokens,
       reasoningTokens: usage.summary.reasoning_tokens ?? 0,
     },
     rateStats: {
@@ -71,6 +89,11 @@ export function buildStatCardMetrics({ usage }: { usage: UsageOverviewPayload | 
       requestCount: usage.summary.request_count ?? 0,
       tokenCount: usage.summary.token_count ?? 0,
     },
+    cacheRateStats: {
+      cachedRate: calculateCacheRate({ inputTokens, cachedTokens }),
+      cachedTokens,
+      inputTokens,
+    },
     totalCost: usage.summary.total_cost ?? 0,
     costAvailable: usage.summary.cost_available === true,
   };
@@ -79,7 +102,7 @@ export function buildStatCardMetrics({ usage }: { usage: UsageOverviewPayload | 
 export function StatCards({ usage, loading, sparklines }: StatCardsProps) {
   const { t } = useTranslation();
   const usageSnapshot = usage?.usage ?? null;
-  const { tokenBreakdown, rateStats, totalCost, costAvailable } = useMemo(
+  const { tokenBreakdown, rateStats, cacheRateStats, totalCost, costAvailable } = useMemo(
     () => buildStatCardMetrics({ usage }),
     [usage]
   );
@@ -160,6 +183,28 @@ export function StatCards({ usage, loading, sparklines }: StatCardsProps) {
         </span>
       ),
       trend: sparklines.tpm,
+    },
+    {
+      key: 'cache-rate',
+      label: t('usage_stats.cache_rate'),
+      icon: <IconPercent size={16} />,
+      accent: '#14b8a6',
+      accentSoft: 'rgba(20, 184, 166, 0.18)',
+      accentBorder: 'rgba(20, 184, 166, 0.34)',
+      value: loading || cacheRateStats.cachedRate === null ? '-' : `${formatFixedTwoDecimals(cacheRateStats.cachedRate)}%`,
+      meta: (
+        <>
+          <span className={styles.statMetaItem}>
+            {t('usage_stats.cached_tokens')}:{' '}
+            {loading ? '-' : formatCompactNumber(cacheRateStats.cachedTokens)}
+          </span>
+          <span className={styles.statMetaItem}>
+            {t('usage_stats.input_tokens')}:{' '}
+            {loading ? '-' : formatCompactNumber(cacheRateStats.inputTokens)}
+          </span>
+        </>
+      ),
+      trend: sparklines.cachedRate,
     },
     {
       key: 'cost',

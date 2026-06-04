@@ -22,6 +22,20 @@ const usageWithBackendSummary: UsagePayload = {
     cached_tokens: 22,
     reasoning_tokens: 33,
   },
+  series: {
+    requests: {},
+    tokens: {},
+    rpm: {},
+    tpm: {},
+    cost: {},
+    input_tokens: {
+      '2026-04-23T10:00:00Z': 120,
+      '2026-04-23T11:00:00Z': 100,
+    },
+    output_tokens: {},
+    cached_tokens: {},
+    reasoning_tokens: {},
+  },
 };
 
 describe('buildStatCardMetrics', () => {
@@ -37,7 +51,24 @@ describe('buildStatCardMetrics', () => {
     expect(metrics.rateStats.tpm).toBe(6.475);
     expect(metrics.tokenBreakdown.cachedTokens).toBe(22);
     expect(metrics.tokenBreakdown.reasoningTokens).toBe(33);
+    expect(metrics.cacheRateStats.cachedRate).toBe(10);
+    expect(metrics.cacheRateStats.inputTokens).toBe(220);
     expect(metrics.totalCost).toBe(1.234);
+  });
+
+  it('keeps cache rate empty when overview input tokens are missing', () => {
+    const metrics = buildStatCardMetrics({
+      usage: {
+        ...usageWithBackendSummary,
+        series: {
+          ...usageWithBackendSummary.series!,
+          input_tokens: {},
+        },
+      },
+    });
+
+    expect(metrics.cacheRateStats.cachedRate).toBeNull();
+    expect(metrics.cacheRateStats.inputTokens).toBe(0);
   });
 
   it('keeps priced total cost visible when availability is partial', () => {
