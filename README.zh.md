@@ -7,23 +7,26 @@
 它依赖 [CLIProxyAPI（CPA）](https://github.com/router-for-me/CLIProxyAPI) 作为后端 CPA 数据来源，目标是在 CPA 之上补充持久化存储与统计分析能力。服务会从 CPA Redis usage 队列消费事件并写入 SQLite，定时拉取 CPA metadata，暴露聚合 API，并提供内置 Web Dashboard 用于查看 usage、pricing、request health 和 model/API 维度的统计信息。
 
 <p float="left">
-  <img src="https://images.bitskyline.com/i/2026/05/govoah.png" width="49%" />
-  <img src="https://images.bitskyline.com/i/2026/05/fu4lec.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xwjnop.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xwk25d.png" width="49%" />
 </p>
 <p float="left">
-  <img src="https://images.bitskyline.com/i/2026/05/fu43px.png" width="49%" />
-  <img src="https://images.bitskyline.com/i/2026/05/fu4gh3.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xw9jj4.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xybv3z.png" width="49%" />
 </p>
 
 ## 功能特性
 
 - 持久保存 CPA usage 数据到 SQLite
-- Dashboard 查看请求量、Token、成本、缓存命中率、成功率和延迟
-- 支持按时间范围、模型、API Key 和来源筛选用量明细
-- 分析页面提供 Token 趋势、模型/API Key/AI Provider 构成和时段热力图
+- Dashboard 查看请求量、Token、成本、缓存、成功率和请求性能
+- 支持按时间范围、模型、API Key、来源和请求结果筛选用量明细
+- Request Events 提供请求级明细查看、筛选、分页、导出和自定义显示
+- 分析页面提供用量趋势、成本分析、模型/API Key/AI Provider 构成和时段热力图
 - API Key 独立查询页，可按 CPA API Key 查看专属用量
-- 凭证页面展示 Auth File 与 AI Provider 使用情况，支持凭证限额查询与刷新
+- 凭证页面展示 Auth File 与 AI Provider 使用情况，支持限额查询、刷新、巡检和排序
+- 支持多 Provider quota 窗口用量与限额展示
 - 可维护模型价格，用于成本估算和统计展示
+- 自动同步 CPA Auth Files、API Keys、AI Providers 等 metadata 变化
 - 可选密码登录保护、SQLite 备份、Docker/Docker Compose 和 systemd 部署
 
 ## 快速开始

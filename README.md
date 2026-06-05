@@ -7,23 +7,26 @@ CPA Usage Keeper is a standalone CPA usage persistence and dashboard service.
 It relies on [CLIProxyAPI (CPA)](https://github.com/router-for-me/CLIProxyAPI) as the backend CPA data source and adds persistent storage and statistical analysis capabilities on top of CPA. The service consumes events from the CPA Redis usage queue into SQLite, periodically pulls CPA metadata, exposes aggregation APIs, and serves a built-in web dashboard for usage, pricing, request health, and model/API statistics.
 
 <p float="left">
-  <img src="https://images.bitskyline.com/i/2026/05/govoah.png" width="49%" />
-  <img src="https://images.bitskyline.com/i/2026/05/fu4lec.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xwjnop.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xwk25d.png" width="49%" />
 </p>
 <p float="left">
-  <img src="https://images.bitskyline.com/i/2026/05/fu43px.png" width="49%" />
-  <img src="https://images.bitskyline.com/i/2026/05/fu4gh3.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xw9jj4.png" width="49%" />
+  <img src="https://images.bitskyline.com/i/2026/06/xybv3z.png" width="49%" />
 </p>
 
 ## Features
 
 - Persist CPA usage data to SQLite
-- Dashboard for request volume, tokens, cost, cache hit rate, success rate, and latency
-- Filter usage details by time range, model, API Key, and source
-- Analysis page for token trends, model/API Key/AI Provider composition, and hourly heatmaps
+- Dashboard for request volume, tokens, cost, cache usage, success rate, and request performance
+- Filter usage details by time range, model, API Key, source, and request result
+- Request Events for per-request details, filtering, pagination, export, and customizable display
+- Analysis page for usage trends, cost analysis, model/API Key/AI Provider composition, and hourly heatmaps
 - Standalone API Key usage page for querying usage by CPA API Key
-- Credentials page for Auth File and AI Provider usage, with credential quota lookup and refresh
+- Credentials page for Auth File and AI Provider usage, with quota lookup, refresh, inspection, and sorting
+- Provider quota window usage and quota display across supported providers
 - Maintain model prices for cost estimation and reporting
+- Automatically sync CPA Auth Files, API Keys, AI Providers, and other metadata changes
 - Optional password login protection, SQLite backups, Docker/Docker Compose, and systemd deployment
 
 ## Quick Start
