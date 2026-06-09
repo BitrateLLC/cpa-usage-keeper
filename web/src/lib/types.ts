@@ -470,3 +470,42 @@ export interface UsageFilterWindow {
   endMs?: number
   windowMinutes?: number
 }
+
+export type AccountGuardChannelType = 'telegram' | 'webhook'
+
+export interface AccountGuardChannel {
+  id: string
+  type: AccountGuardChannelType
+  enabled: boolean
+  // 密钥字段：GET 返回掩码值；PUT 时留空表示保持原值（只写合并）。
+  telegram_bot_token: string
+  telegram_bot_token_configured: boolean
+  telegram_chat_id: string
+  webhook_url: string
+  webhook_url_configured: boolean
+}
+
+export interface AccountGuardSettings {
+  enabled: boolean
+  disable_status_codes: number[]
+  monitor_status_codes: number[]
+  alert_interval_seconds: number
+  channels: AccountGuardChannel[]
+}
+
+export interface AccountGuardChannelInput {
+  id: string
+  type: AccountGuardChannelType
+  enabled: boolean
+  telegram_bot_token: string
+  telegram_chat_id: string
+  webhook_url: string
+}
+
+export interface AccountGuardSettingsInput {
+  enabled: boolean
+  disable_status_codes: number[]
+  monitor_status_codes: number[]
+  alert_interval_seconds: number
+  channels: AccountGuardChannelInput[]
+}

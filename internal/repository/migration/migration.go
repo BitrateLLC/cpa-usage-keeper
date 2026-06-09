@@ -45,6 +45,7 @@ const (
 	migrationAddUsageEventExecutorType              = "20260602_add_usage_event_executor_type"
 	migrationAddUsageIdentityFileFields             = "20260603_add_usage_identity_file_fields"
 	migrationBackfillGeminiCodexTokenFormat         = "20260605_backfill_gemini_codex_token_format"
+	migrationCreateAccountGuardSettings             = "20260610_create_account_guard_settings"
 )
 
 type schemaMigration struct {
@@ -134,6 +135,7 @@ func orderedMigrations() []databaseMigration {
 		{version: migrationAddUsageEventExecutorType, run: addUsageEventExecutorTypeMigration},
 		{version: migrationAddUsageIdentityFileFields, run: addUsageIdentityFileFieldsMigration},
 		{version: migrationBackfillGeminiCodexTokenFormat, run: backfillGeminiCodexTokenFormatMigration},
+		{version: migrationCreateAccountGuardSettings, run: createAccountGuardSettingsMigration},
 	}
 }
 

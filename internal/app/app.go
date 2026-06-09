@@ -57,6 +57,7 @@ type App struct {
 	QuotaService      QuotaRunner
 	QuotaAutoRefresh  QuotaRunner
 	BackupMaintenance *DatabaseBackupRunner
+	AccountGuard      Runner
 	LogCloser         io.Closer
 
 	backgroundCancel context.CancelFunc
@@ -121,6 +122,7 @@ func NewWithConfig(cfg config.Config) (*App, error) {
 		Timeout:       cfg.RequestTimeout,
 		TLS:           cfg.RedisQueueTLS,
 		TLSSkipVerify: cfg.TLSSkipVerify,
+		Channel:       cpa.ManagementUsageSubscribeChannel,
 	})
 	// usage 通道可能混入 metadata 控制消息，落 inbox 前先过滤并转交 metadata runner。
 	redisInboxWriter := poller.NewControlAwareRedisInboxWriter(poller.NewRedisInboxWriter(db, cfg.RedisQueueKey), metadataSyncRunner)
@@ -154,6 +156,11 @@ func NewWithConfig(cfg config.Config) (*App, error) {
 	cpaAPIKeyService := service.NewCPAAPIKeyService(db)
 	cpaClient := cpa.NewClient(cfg.CPABaseURL, cfg.CPAManagementKey, cfg.RequestTimeout, cfg.TLSSkipVerify)
 	authFilesManagementService := service.NewAuthFilesManagementService(cpaClient)
+	// 号池守护设置改为 DB 持久化 + 运行时热生效；首启用 env 现值播种，之后以 DB 为准。
+	accountGuardSettingsService := service.NewAccountGuardSettingsService(db)
+	if err := accountGuardSettingsService.Seed(cfg); err != nil {
+		logrus.WithError(err).Warn("account guard settings seed failed")
+	}
 	if cfg.TLSSkipVerify {
 		logrus.WithField("cpa_base_url", cfg.CPABaseURL).Warn("TLS certificate verification is disabled for CPA and Redis queue connections")
 	}
@@ -179,6 +186,7 @@ func NewWithConfig(cfg config.Config) (*App, error) {
 		QuotaService:      quotaService,
 		QuotaAutoRefresh:  quotaAutoRefreshService(cfg, quotaService),
 		BackupMaintenance: backupMaintenance,
+		AccountGuard:      accountGuardRunner(cfg, db, quotaService, authFilesManagementService, accountGuardSettingsService),
 		LogCloser:         logCloser,
 		Router: api.NewRouter(
 			webui.Static,
@@ -198,6 +206,7 @@ func NewWithConfig(cfg config.Config) (*App, error) {
 				Quota:         quotaService,
 				CPAAPIKeys:    cpaAPIKeyService,
 				AuthFiles:     authFilesManagementService,
+				AccountGuard:  accountGuardSettingsService,
 				Status:        api.StatusRouteConfig{CPAPublicURL: cfg.CPAPublicURL, ActiveRecorder: quotaActiveRecorder(cfg, quotaService), QuotaAutoRefreshEnabled: cfg.QuotaAutoRefreshEnabled},
 			},
 		),
@@ -216,6 +225,29 @@ func quotaAutoRefreshService(cfg config.Config, service *quota.Service) QuotaRun
 		return nil
 	}
 	return service
+}
+
+// accountGuardRunner 构造号池守护 runner；总是启动，是否真正干活由可在网页编辑的设置快照控制。
+func accountGuardRunner(cfg config.Config, db *gorm.DB, inspector *quota.Service, disabler service.AuthFilesManagementProvider, settings guardSettingsProvider) Runner {
+	// error 订阅源复用 usage 订阅实现，只把 channel 切换成 errors。
+	errorSubSource := poller.NewRedisSubscribeSource(poller.RedisSubscribeOptions{
+		BaseURL:       cfg.CPABaseURL,
+		RedisAddr:     cfg.RedisQueueAddr,
+		ManagementKey: cfg.CPAManagementKey,
+		Timeout:       cfg.RequestTimeout,
+		TLS:           cfg.RedisQueueTLS,
+		TLSSkipVerify: cfg.TLSSkipVerify,
+		Channel:       cpa.ManagementErrorsSubscribeChannel,
+	})
+	return NewAccountGuardRunner(AccountGuardDeps{
+		SubSource:    errorSubSource,
+		Prober:       inspector,
+		Disabler:     disabler,
+		ListDisabled: NewDBDisabledLister(db),
+		HealthCounts: NewDBHealthCounter(db),
+		Resolve:      NewDBFileNameResolver(db),
+		Settings:     settings,
+	})
 }
 
 func closeGormDB(db *gorm.DB) error {
@@ -301,6 +333,13 @@ func (a *App) Run() error {
 		a.startBackgroundTask(func() {
 			if err := a.BackupMaintenance.Run(ctx); err != nil {
 				logrus.Errorf("database backup stopped: %v", err)
+			}
+		})
+	}
+	if a.AccountGuard != nil {
+		a.startBackgroundTask(func() {
+			if err := a.AccountGuard.Run(ctx); err != nil {
+				logrus.Errorf("account guard stopped: %v", err)
 			}
 		})
 	}

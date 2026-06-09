@@ -18,6 +18,7 @@ var configEnvKeys = []string{
 	"SQLITE_PATH", "BACKUP_ENABLED", "BACKUP_DIR", "BACKUP_INTERVAL", "BACKUP_RETENTION_DAYS",
 	"REQUEST_TIMEOUT", "LOG_LEVEL", "LOG_FILE_ENABLED", "LOG_DIR", "LOG_RETENTION_DAYS",
 	"AUTH_ENABLED", "LOGIN_PASSWORD", "AUTH_SESSION_TTL", "TZ", "TLS_SKIP_VERIFY", "QUOTA_REFRESH_WORKER_LIMIT", "QUOTA_AUTO_REFRESH_ENABLED", "QUOTA_AUTO_REFRESH_INTERVAL",
+	"ACCOUNT_GUARD_ENABLED", "ACCOUNT_GUARD_DISABLE_ON_401", "ACCOUNT_GUARD_ALERT_INTERVAL", "ALERT_TELEGRAM_BOT_TOKEN", "ALERT_TELEGRAM_CHAT_ID", "ALERT_WEBHOOK_URL",
 }
 
 func TestMain(m *testing.M) {
@@ -169,6 +170,59 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	}
 	if cfg.LogRetentionDays != 7 {
 		t.Fatalf("expected default log retention 7 days, got %d", cfg.LogRetentionDays)
+	}
+	if cfg.AccountGuardEnabled {
+		t.Fatal("expected account guard to be disabled by default")
+	}
+	if !cfg.AccountGuardDisableOn401 {
+		t.Fatal("expected account guard disable-on-401 to default true")
+	}
+	if cfg.AccountGuardAlertInterval != 15*time.Minute {
+		t.Fatalf("expected default account guard alert interval 15m, got %s", cfg.AccountGuardAlertInterval)
+	}
+	if cfg.AlertTelegramBotToken != "" || cfg.AlertTelegramChatID != "" || cfg.AlertWebhookURL != "" {
+		t.Fatal("expected alert channels to be empty by default")
+	}
+}
+
+func TestLoadReadsAccountGuardOverrides(t *testing.T) {
+	t.Setenv("CPA_BASE_URL", "http://127.0.0.1:"+cpa.ManagementRedisDefaultPort)
+	t.Setenv("CPA_MANAGEMENT_KEY", "secret")
+	t.Setenv("ACCOUNT_GUARD_ENABLED", "true")
+	t.Setenv("ACCOUNT_GUARD_DISABLE_ON_401", "false")
+	t.Setenv("ACCOUNT_GUARD_ALERT_INTERVAL", "90s")
+	t.Setenv("ALERT_TELEGRAM_BOT_TOKEN", "tok")
+	t.Setenv("ALERT_TELEGRAM_CHAT_ID", "123")
+	t.Setenv("ALERT_WEBHOOK_URL", "https://hook.example.com/x")
+
+	cfg, err := LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv returned error: %v", err)
+	}
+	if !cfg.AccountGuardEnabled {
+		t.Fatal("expected account guard enabled")
+	}
+	if cfg.AccountGuardDisableOn401 {
+		t.Fatal("expected disable-on-401 to be false")
+	}
+	if cfg.AccountGuardAlertInterval != 90*time.Second {
+		t.Fatalf("expected alert interval 90s, got %s", cfg.AccountGuardAlertInterval)
+	}
+	if cfg.AlertTelegramBotToken != "tok" || cfg.AlertTelegramChatID != "123" {
+		t.Fatalf("unexpected telegram config %q/%q", cfg.AlertTelegramBotToken, cfg.AlertTelegramChatID)
+	}
+	if cfg.AlertWebhookURL != "https://hook.example.com/x" {
+		t.Fatalf("unexpected webhook url %q", cfg.AlertWebhookURL)
+	}
+}
+
+func TestLoadRejectsTooSmallAccountGuardInterval(t *testing.T) {
+	t.Setenv("CPA_BASE_URL", "http://127.0.0.1:"+cpa.ManagementRedisDefaultPort)
+	t.Setenv("CPA_MANAGEMENT_KEY", "secret")
+	t.Setenv("ACCOUNT_GUARD_ALERT_INTERVAL", "10s")
+
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("expected error for too-small account guard interval")
 	}
 }
 

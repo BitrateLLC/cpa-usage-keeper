@@ -49,6 +49,7 @@ type OptionalProviders struct {
 	Quota         QuotaProvider
 	CPAAPIKeys    service.CPAAPIKeyProvider
 	AuthFiles     service.AuthFilesManagementProvider
+	AccountGuard  service.AccountGuardSettingsProvider
 	Status        StatusRouteConfig
 }
 
@@ -84,12 +85,14 @@ func NewRouter(
 	var quotaProvider QuotaProvider
 	var cpaAPIKeyProvider service.CPAAPIKeyProvider
 	var authFilesProvider service.AuthFilesManagementProvider
+	var accountGuardProvider service.AccountGuardSettingsProvider
 	var statusConfig StatusRouteConfig
 	if len(optionalProviders) > 0 {
 		usageIdentityProvider = optionalProviders[0].UsageIdentity
 		quotaProvider = optionalProviders[0].Quota
 		cpaAPIKeyProvider = optionalProviders[0].CPAAPIKeys
 		authFilesProvider = optionalProviders[0].AuthFiles
+		accountGuardProvider = optionalProviders[0].AccountGuard
 		statusConfig = optionalProviders[0].Status
 	}
 	authHandler.setCPAAPIKeyProvider(cpaAPIKeyProvider)
@@ -106,6 +109,7 @@ func NewRouter(
 	registerCPAAPIKeyRoutes(adminProtected, cpaAPIKeyProvider)
 	registerPricingRoutes(adminProtected, pricingProvider)
 	registerQuotaRoutes(adminProtected, quotaProvider)
+	registerAccountGuardSettingsRoutes(adminProtected, accountGuardProvider)
 
 	keyViewerProtected := apiV1.Group("")
 	keyViewerProtected.Use(authHandler.apiKeyViewerMiddleware())

@@ -38,6 +38,8 @@ type RedisSubscribeOptions struct {
 	Timeout       time.Duration
 	TLS           bool
 	TLSSkipVerify bool
+	// Channel 是要订阅的 CPA channel；为空时默认 usage，保持旧调用方行为不变。
+	Channel string
 }
 
 type RedisSubscribeSource struct {
@@ -45,6 +47,8 @@ type RedisSubscribeSource struct {
 	address string
 	// managementKey 用于 Redis AUTH，来源是 CPA_MANAGEMENT_KEY。
 	managementKey string
+	// channel 是本 source 订阅的 CPA channel（usage 或 errors）。
+	channel string
 	// timeout 限制连接、AUTH、SUBSCRIBE 握手耗时，不限制后续长期阻塞接收。
 	timeout time.Duration
 	// dial 抽象出来便于 TLS/非 TLS 统一创建连接，也便于测试替换。
@@ -82,11 +86,18 @@ func NewRedisSubscribeSource(opts RedisSubscribeOptions) *RedisSubscribeSource {
 		}
 	}
 	// 构造 source 时只保存配置，不主动联网。
+	channel := strings.TrimSpace(opts.Channel)
+	if channel == "" {
+		// 默认订阅 usage channel，保持旧调用方行为不变。
+		channel = cpa.ManagementUsageSubscribeChannel
+	}
 	return &RedisSubscribeSource{
 		// address 在 Subscribe 时校验，允许构造阶段不报错。
 		address: addr,
 		// managementKey 只 trim 空白，不写入日志，避免泄漏密钥。
 		managementKey: strings.TrimSpace(opts.ManagementKey),
+		// channel 决定 SUBSCRIBE 目标与消息过滤。
+		channel: channel,
 		// timeout 后续用于 AUTH/SUBSCRIBE 握手 deadline。
 		timeout: opts.Timeout,
 		// dial 保存最终 TCP/TLS 连接函数。
@@ -134,8 +145,8 @@ func (s *RedisSubscribeSource) Subscribe(ctx context.Context) (UsageSubscription
 		conn.Close()
 		return nil, fmt.Errorf("%w: %s", cpa.ErrRedisQueueAuth, authResponse.err)
 	}
-	// AUTH 成功后订阅 usage channel。
-	if err := writeRedisIngestRESPCommand(conn, cpa.ManagementRedisSubscribeCommand, cpa.ManagementUsageSubscribeChannel); err != nil {
+	// AUTH 成功后订阅目标 channel。
+	if err := writeRedisIngestRESPCommand(conn, cpa.ManagementRedisSubscribeCommand, s.channel); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("write redis subscribe command: %w", err)
 	}
@@ -150,7 +161,7 @@ func (s *RedisSubscribeSource) Subscribe(ctx context.Context) (UsageSubscription
 		conn.Close()
 		return nil, fmt.Errorf("redis subscribe failed: %s", subscribeResponse.err)
 	}
-	if !redisIngestSubscribeAck(subscribeResponse) {
+	if !redisIngestSubscribeAck(subscribeResponse, s.channel) {
 		// 非预期 ack 说明协议状态不可信，不能进入 subscribe 模式。
 		conn.Close()
 		return nil, fmt.Errorf("redis subscribe returned unexpected response")
@@ -158,7 +169,7 @@ func (s *RedisSubscribeSource) Subscribe(ctx context.Context) (UsageSubscription
 	// 握手完成后清掉 deadline，让订阅接收可以长期低 CPU 阻塞等待推送。
 	_ = conn.SetDeadline(time.Time{})
 	// 返回长期 subscription，runner 负责 Close 生命周期。
-	return &redisUsageSubscription{conn: conn, reader: reader}, nil
+	return &redisUsageSubscription{conn: conn, reader: reader, channel: s.channel}, nil
 }
 
 type redisUsageSubscription struct {
@@ -166,6 +177,8 @@ type redisUsageSubscription struct {
 	conn net.Conn
 	// reader 保存 RESP 解析状态，不能每次 Receive 重建。
 	reader *bufio.Reader
+	// channel 用于过滤只属于本订阅 channel 的 message 事件。
+	channel string
 }
 
 func (s *redisUsageSubscription) Receive(ctx context.Context) (string, error) {
@@ -219,10 +232,10 @@ func (s *redisUsageSubscription) Receive(ctx context.Context) (string, error) {
 			// Redis 主动返回错误时终止订阅，让 runner 进入降级。
 			return "", fmt.Errorf("redis subscription error: %s", value.err)
 		}
-		// 只接受 message usage payload，其他 RESP 事件忽略。
-		message, ok := redisIngestSubscriptionMessage(value)
+		// 只接受本 channel 的 message payload，其他 RESP 事件忽略。
+		message, ok := redisIngestSubscriptionMessage(value, s.channel)
 		if ok {
-			// 返回原始 usage JSON 字符串，不做 decode。
+			// 返回原始 JSON 字符串，不做 decode。
 			return message, nil
 		}
 	}
@@ -237,33 +250,33 @@ func (s *redisUsageSubscription) Close() error {
 	return s.conn.Close()
 }
 
-func redisIngestSubscribeAck(value redisIngestRESPValue) bool {
+func redisIngestSubscribeAck(value redisIngestRESPValue, wantChannel string) bool {
 	if len(value.array) < 3 {
 		// Redis SUBSCRIBE ack 至少包含 kind、channel、订阅数量。
 		return false
 	}
 	// 第 1 项必须是 subscribe。
 	kind := strings.ToLower(value.array[0].stringValue())
-	// 第 2 项必须是 usage channel。
+	// 第 2 项必须是订阅的目标 channel。
 	channel := value.array[1].stringValue()
 	// 只验证我们关心的 channel，订阅数量不影响后续逻辑。
-	return kind == "subscribe" && channel == cpa.ManagementUsageSubscribeChannel
+	return kind == "subscribe" && channel == wantChannel
 }
 
-func redisIngestSubscriptionMessage(value redisIngestRESPValue) (string, bool) {
+func redisIngestSubscriptionMessage(value redisIngestRESPValue, wantChannel string) (string, bool) {
 	if len(value.array) < 3 {
 		// message 事件至少包含 kind、channel、payload。
 		return "", false
 	}
 	// 第 1 项必须是 Redis message 事件。
 	kind := strings.ToLower(value.array[0].stringValue())
-	// 第 2 项必须是 usage channel。
+	// 第 2 项必须是订阅的目标 channel。
 	channel := value.array[1].stringValue()
-	if kind != "message" || channel != cpa.ManagementUsageSubscribeChannel {
+	if kind != "message" || channel != wantChannel {
 		// 其他 channel 或事件类型直接忽略。
 		return "", false
 	}
-	// 第 3 项是 CPA 推送的 raw usage JSON。
+	// 第 3 项是 CPA 推送的 raw JSON。
 	payload := value.array[2].stringValue()
 	if strings.TrimSpace(payload) == "" {
 		// 空 payload 不写入 inbox，避免无意义 decode 失败。

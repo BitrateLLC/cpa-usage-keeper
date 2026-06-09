@@ -1737,6 +1737,13 @@
   flex: 0 0 auto;
 }
 
+// 号池守护：priceForm 面板内有多行，补竖向间距。
+.guardFormStack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .formRow {
   display: flex;
   gap: 10px;
@@ -1788,6 +1795,97 @@
   :global(.btn) {
     min-height: 40px;
   }
+}
+
+// 守护设置卡片：开关行不参与 formField 的等宽拉伸，保持紧凑横排。
+.guardToggleField {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+
+  input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+}
+
+// 状态码编辑器：标签 + 输入行 + 可删 chip，纵向堆叠且顶端对齐。
+.guardCodeField {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+
+  > label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+}
+
+.guardCodeInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  :global(.input) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.guardCodeChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 24px;
+}
+
+.guardChannelsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+// 渠道行：纵向块（表单在上、删除按钮在底部右对齐），不用 priceItem 的左右横排。
+.guardChannelItem {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg-secondary) 76%, transparent);
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  width: 100%;
+  min-width: 0;
+}
+
+.guardChannelBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.guardChannelActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .apiKeySettingsCard:global(.card) {

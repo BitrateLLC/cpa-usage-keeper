@@ -15,14 +15,16 @@ import (
 )
 
 const (
-	DefaultTimeZone                 = "Asia/Shanghai"
-	RedisQueueKeyDefault            = cpa.ManagementUsageQueueKey
-	RedisQueueBatchSizeDefault      = 10000
-	MetadataSyncIntervalDefault     = 30 * time.Second
-	QuotaAutoRefreshIntervalDefault = 5 * time.Minute
-	QuotaAutoRefreshIntervalMin     = 60 * time.Second
-	QuotaRefreshWorkerLimitDefault  = 10
-	QuotaRefreshWorkerLimitMax      = 100
+	DefaultTimeZone                  = "Asia/Shanghai"
+	RedisQueueKeyDefault             = cpa.ManagementUsageQueueKey
+	RedisQueueBatchSizeDefault       = 10000
+	MetadataSyncIntervalDefault      = 30 * time.Second
+	QuotaAutoRefreshIntervalDefault  = 5 * time.Minute
+	QuotaAutoRefreshIntervalMin      = 60 * time.Second
+	QuotaRefreshWorkerLimitDefault   = 10
+	QuotaRefreshWorkerLimitMax       = 100
+	AccountGuardAlertIntervalDefault = 15 * time.Minute
+	AccountGuardAlertIntervalMin     = 60 * time.Second
 )
 
 var (
@@ -100,6 +102,18 @@ type Config struct {
 	LoginPassword string
 	// AuthSessionTTL 是登录 session 有效时长。
 	AuthSessionTTL time.Duration
+	// AccountGuardEnabled 控制是否启动号池守护：订阅 CPA error 事件、401/402 自动禁用、定时告警。
+	AccountGuardEnabled bool
+	// AccountGuardDisableOn401 控制收到 401/402 error 事件时是否真禁用账号（false 时只统计告警）。
+	AccountGuardDisableOn401 bool
+	// AccountGuardAlertInterval 是号池健康度汇总告警的固定间隔。
+	AccountGuardAlertInterval time.Duration
+	// AlertTelegramBotToken 是 Telegram Bot token，配合 chat id 启用 Telegram 告警通道。
+	AlertTelegramBotToken string
+	// AlertTelegramChatID 是 Telegram 目标 chat id。
+	AlertTelegramChatID string
+	// AlertWebhookURL 是通用 Webhook 告警地址（企微/飞书/Slack/自建均可消费）。
+	AlertWebhookURL string
 }
 
 type LoadOptions struct {
@@ -168,6 +182,24 @@ func Load(options LoadOptions) (*Config, error) {
 	}
 	if quotaRefreshWorkerLimit > QuotaRefreshWorkerLimitMax {
 		return nil, fmt.Errorf("QUOTA_REFRESH_WORKER_LIMIT must be <= %d", QuotaRefreshWorkerLimitMax)
+	}
+
+	accountGuardEnabled, err := getBool("ACCOUNT_GUARD_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+
+	accountGuardDisableOn401, err := getBool("ACCOUNT_GUARD_DISABLE_ON_401", true)
+	if err != nil {
+		return nil, err
+	}
+
+	accountGuardAlertInterval, err := getDuration("ACCOUNT_GUARD_ALERT_INTERVAL", AccountGuardAlertIntervalDefault)
+	if err != nil {
+		return nil, err
+	}
+	if accountGuardAlertInterval < AccountGuardAlertIntervalMin {
+		return nil, fmt.Errorf("ACCOUNT_GUARD_ALERT_INTERVAL must be >= 60s")
 	}
 
 	requestTimeout, err := getDuration("REQUEST_TIMEOUT", 30*time.Second)
@@ -243,38 +275,44 @@ func Load(options LoadOptions) (*Config, error) {
 	workDir := getString("WORK_DIR", DefaultWorkDir)
 
 	cfg := &Config{
-		AppPort:                  getString("APP_PORT", "8080"),
-		AppBasePath:              appBasePath,
-		CPAPublicURL:             strings.TrimSpace(os.Getenv("CPA_PUBLIC_URL")),
-		TLSEnabled:               tlsEnabled,
-		TLSCertFile:              strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
-		TLSKeyFile:               strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
-		CPABaseURL:               strings.TrimSpace(os.Getenv("CPA_BASE_URL")),
-		CPAManagementKey:         strings.TrimSpace(os.Getenv("CPA_MANAGEMENT_KEY")),
-		RedisQueueAddr:           strings.TrimSpace(os.Getenv("REDIS_QUEUE_ADDR")),
-		RedisQueueTLS:            redisQueueTLS,
-		RedisQueueKey:            RedisQueueKeyDefault,
-		RedisQueueBatchSize:      redisQueueBatchSize,
-		RedisQueueIdleInterval:   redisQueueIdleInterval,
-		MetadataSyncInterval:     MetadataSyncIntervalDefault,
-		QuotaAutoRefreshEnabled:  quotaAutoRefreshEnabled,
-		QuotaAutoRefreshInterval: quotaAutoRefreshInterval,
-		QuotaRefreshWorkerLimit:  quotaRefreshWorkerLimit,
-		WorkDir:                  workDir,
-		SQLitePath:               filepath.Join(workDir, workDirDatabaseName),
-		BackupEnabled:            backupEnabled,
-		BackupDir:                filepath.Join(workDir, workDirBackupsName),
-		BackupInterval:           backupInterval,
-		BackupRetentionDays:      backupRetentionDays,
-		RequestTimeout:           requestTimeout,
-		TLSSkipVerify:            tlsSkipVerify,
-		LogLevel:                 getString("LOG_LEVEL", "info"),
-		LogFileEnabled:           logFileEnabled,
-		LogDir:                   filepath.Join(workDir, workDirLogsName),
-		LogRetentionDays:         logRetentionDays,
-		AuthEnabled:              authEnabled,
-		LoginPassword:            strings.TrimSpace(os.Getenv("LOGIN_PASSWORD")),
-		AuthSessionTTL:           authSessionTTL,
+		AppPort:                   getString("APP_PORT", "8080"),
+		AppBasePath:               appBasePath,
+		CPAPublicURL:              strings.TrimSpace(os.Getenv("CPA_PUBLIC_URL")),
+		TLSEnabled:                tlsEnabled,
+		TLSCertFile:               strings.TrimSpace(os.Getenv("TLS_CERT_FILE")),
+		TLSKeyFile:                strings.TrimSpace(os.Getenv("TLS_KEY_FILE")),
+		CPABaseURL:                strings.TrimSpace(os.Getenv("CPA_BASE_URL")),
+		CPAManagementKey:          strings.TrimSpace(os.Getenv("CPA_MANAGEMENT_KEY")),
+		RedisQueueAddr:            strings.TrimSpace(os.Getenv("REDIS_QUEUE_ADDR")),
+		RedisQueueTLS:             redisQueueTLS,
+		RedisQueueKey:             RedisQueueKeyDefault,
+		RedisQueueBatchSize:       redisQueueBatchSize,
+		RedisQueueIdleInterval:    redisQueueIdleInterval,
+		MetadataSyncInterval:      MetadataSyncIntervalDefault,
+		QuotaAutoRefreshEnabled:   quotaAutoRefreshEnabled,
+		QuotaAutoRefreshInterval:  quotaAutoRefreshInterval,
+		QuotaRefreshWorkerLimit:   quotaRefreshWorkerLimit,
+		WorkDir:                   workDir,
+		SQLitePath:                filepath.Join(workDir, workDirDatabaseName),
+		BackupEnabled:             backupEnabled,
+		BackupDir:                 filepath.Join(workDir, workDirBackupsName),
+		BackupInterval:            backupInterval,
+		BackupRetentionDays:       backupRetentionDays,
+		RequestTimeout:            requestTimeout,
+		TLSSkipVerify:             tlsSkipVerify,
+		LogLevel:                  getString("LOG_LEVEL", "info"),
+		LogFileEnabled:            logFileEnabled,
+		LogDir:                    filepath.Join(workDir, workDirLogsName),
+		LogRetentionDays:          logRetentionDays,
+		AuthEnabled:               authEnabled,
+		LoginPassword:             strings.TrimSpace(os.Getenv("LOGIN_PASSWORD")),
+		AuthSessionTTL:            authSessionTTL,
+		AccountGuardEnabled:       accountGuardEnabled,
+		AccountGuardDisableOn401:  accountGuardDisableOn401,
+		AccountGuardAlertInterval: accountGuardAlertInterval,
+		AlertTelegramBotToken:     strings.TrimSpace(os.Getenv("ALERT_TELEGRAM_BOT_TOKEN")),
+		AlertTelegramChatID:       strings.TrimSpace(os.Getenv("ALERT_TELEGRAM_CHAT_ID")),
+		AlertWebhookURL:           strings.TrimSpace(os.Getenv("ALERT_WEBHOOK_URL")),
 	}
 	if cfg.CPABaseURL == "" {
 		return nil, fmt.Errorf("CPA_BASE_URL is required")

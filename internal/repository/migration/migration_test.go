@@ -54,6 +54,7 @@ func TestOrderedMigrationsPreservesExecutionOrder(t *testing.T) {
 		"20260602_add_usage_event_executor_type",
 		"20260603_add_usage_identity_file_fields",
 		"20260605_backfill_gemini_codex_token_format",
+		"20260610_create_account_guard_settings",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("expected ordered migrations %v, got %v", want, got)
@@ -129,6 +130,7 @@ func TestOpenDatabaseRunsSchemaMigrationsAndAddsUsageEventRedisFields(t *testing
 		"20260602_add_usage_event_executor_type",
 		"20260603_add_usage_identity_file_fields",
 		"20260605_backfill_gemini_codex_token_format",
+		"20260610_create_account_guard_settings",
 	}
 	if len(versions) != len(expected) {
 		t.Fatalf("expected migration versions %v, got %v", expected, versions)

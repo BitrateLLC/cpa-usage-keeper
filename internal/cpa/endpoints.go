@@ -21,5 +21,6 @@ const (
 	ManagementRedisSubscribeCommand  = "SUBSCRIBE"
 	ManagementUsageQueueKey          = "queue"
 	ManagementUsageSubscribeChannel  = "usage"
+	ManagementErrorsSubscribeChannel = "errors"
 	ManagementUsageQueueMaxBatchSize = 10000
 )

@@ -33,6 +33,7 @@ import {
   AnalysisPanel,
   ApiKeySettingsCard,
   PriceSettingsCard,
+  AccountGuardSettingsCard,
   AuthFileCredentialsSection,
   AiProviderCredentialsSection,
   CredentialProviderFilterBar,
@@ -41,6 +42,7 @@ import {
   ServiceHealthCard,
   useUsageData,
   usePricingData,
+  useAccountGuardSettings,
   useSparklines,
   useChartData,
   useCredentialsTabData
@@ -798,6 +800,15 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
     loadPricing,
     setModelPrices,
   } = usePricingData({
+    onAuthRequired,
+    enabled: activeTab === 'settings',
+  });
+  const {
+    settings: accountGuardSettings,
+    loading: accountGuardLoading,
+    saving: accountGuardSaving,
+    save: saveAccountGuardSettings,
+  } = useAccountGuardSettings({
     onAuthRequired,
     enabled: activeTab === 'settings',
   });
@@ -1998,6 +2009,13 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
                   onPricesChange={setModelPrices}
                   onNotice={showTopNotice}
                   loading={pricingLoading}
+                />
+                <AccountGuardSettingsCard
+                  settings={accountGuardSettings}
+                  loading={accountGuardLoading}
+                  saving={accountGuardSaving}
+                  onSave={saveAccountGuardSettings}
+                  onNotice={showTopNotice}
                 />
               </div>
             )}

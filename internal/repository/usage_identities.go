@@ -234,6 +234,45 @@ func GetActiveAuthFileUsageIdentityByAuthIndex(ctx context.Context, db *gorm.DB,
 	return identity, nil
 }
 
+// ListDisabledAuthFileIdentities 返回当前被禁用的 Auth File 身份，号池守护用它探测恢复情况。
+func ListDisabledAuthFileIdentities(ctx context.Context, db *gorm.DB) ([]entities.UsageIdentity, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database is nil")
+	}
+	var identities []entities.UsageIdentity
+	if err := db.WithContext(ctx).
+		Select(usageIdentityReadColumns).
+		Where("auth_type = ? AND is_deleted = ? AND disabled = ?", entities.UsageIdentityAuthTypeAuthFile, false, true).
+		Order("name asc, id asc").
+		Find(&identities).Error; err != nil {
+		return nil, fmt.Errorf("list disabled auth file identities: %w", err)
+	}
+	return identities, nil
+}
+
+// AuthFileIdentityHealthCounts 是 Auth File 号池的健康度计数：总数与被禁数。
+type AuthFileIdentityHealthCounts struct {
+	Total    int64
+	Disabled int64
+}
+
+// CountAuthFileIdentityHealth 统计未删除 Auth File 身份的总数和被禁数,健康度比例由号池守护据此计算。
+func CountAuthFileIdentityHealth(ctx context.Context, db *gorm.DB) (AuthFileIdentityHealthCounts, error) {
+	var counts AuthFileIdentityHealthCounts
+	if db == nil {
+		return counts, fmt.Errorf("database is nil")
+	}
+	base := db.WithContext(ctx).Model(&entities.UsageIdentity{}).
+		Where("auth_type = ? AND is_deleted = ?", entities.UsageIdentityAuthTypeAuthFile, false)
+	if err := base.Count(&counts.Total).Error; err != nil {
+		return counts, fmt.Errorf("count auth file identities: %w", err)
+	}
+	if err := base.Session(&gorm.Session{}).Where("disabled = ?", true).Count(&counts.Disabled).Error; err != nil {
+		return counts, fmt.Errorf("count disabled auth file identities: %w", err)
+	}
+	return counts, nil
+}
+
 func AggregateUsageIdentityStats(ctx context.Context, db *gorm.DB, now time.Time) error {
 	if db == nil {
 		return fmt.Errorf("database is nil")
