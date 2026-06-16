@@ -178,7 +178,7 @@ func CleanupUsageEvents(db *gorm.DB, now time.Time) (int64, error) {
 		return 0, fmt.Errorf("database is nil")
 	}
 	cutoff := usageEventsCleanupCutoff(now)
-	result := db.Where("timestamp < ?", timeutil.FormatStorageTime(cutoff)).Delete(&entities.UsageEvent{})
+	result := db.Unscoped().Where("timestamp < ?", timeutil.FormatStorageTime(cutoff)).Delete(&entities.UsageEvent{})
 	if result.Error != nil {
 		return result.RowsAffected, fmt.Errorf("cleanup usage events: %w", result.Error)
 	}
