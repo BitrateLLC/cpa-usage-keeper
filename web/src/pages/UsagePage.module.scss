@@ -280,6 +280,11 @@
   }
 }
 
+.settingsCompactAction {
+  min-height: 32px;
+  padding: 7px 12px;
+}
+
 .usagePillActionDanger {
   color: #b91c1c;
 
@@ -1876,16 +1881,147 @@
 .apiKeySettingsCopyButton,
 .apiKeySettingsSaveButton {
   min-width: 68px;
-  min-height: 40px;
   justify-content: center;
-  padding-right: 11px;
-  padding-left: 11px;
+}
+
+.sessionSettingsCard:global(.card) {
+  height: auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.sessionSettingsBody {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  height: var(--settings-list-scroll-height);
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sessionSettingsList {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sessionSettingsItem {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.2fr) minmax(92px, auto);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-secondary) 76%, transparent);
+}
+
+.sessionSettingsSummary,
+.sessionSettingsDetails {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sessionSettingsSummary {
+  gap: 5px;
+}
+
+.sessionSettingsBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.sessionSettingsDetails {
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+
+  > span {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.sessionSettingsType {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.sessionSettingsCurrent {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent-color) 44%, var(--border-color));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  color: var(--accent-color);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.sessionSettingsName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionSettingsActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.sessionSettingsLogoutButton {
+  min-width: 92px;
+  justify-content: center;
+}
+
+.sessionSettingsConfirmText {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
 }
 
 @include tablet {
   .apiKeySettingsItem {
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
+  }
+
+  .sessionSettingsItem {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .sessionSettingsActions {
+    justify-content: stretch;
+  }
+
+  .sessionSettingsLogoutButton {
+    width: 100%;
   }
 }
 
@@ -1943,6 +2079,30 @@
 
   .apiKeySettingsActions,
   .apiKeySettingsSaveButton {
+    width: 100%;
+  }
+
+  .sessionSettingsCard:global(.card) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .sessionSettingsBody {
+    height: var(--settings-list-scroll-height);
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sessionSettingsItem {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .sessionSettingsLogoutButton {
     width: 100%;
   }
 }

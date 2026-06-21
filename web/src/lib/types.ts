@@ -11,6 +11,24 @@ export interface AuthSessionResponse {
   api_key?: AuthSessionAPIKeySummary
 }
 
+export type AuthManagedSessionKind = 'admin' | 'api_key'
+
+export interface AuthManagedSessionItem {
+  id: string
+  kind: AuthManagedSessionKind
+  role: AuthRole
+  current?: boolean
+  loginAt?: string
+  expiresAt?: string
+  apiKeyId?: string
+  label?: string
+  displayKey?: string
+}
+
+export interface AuthManagedSessionsResponse {
+  items: AuthManagedSessionItem[]
+}
+
 export interface StatusResponse {
   running: boolean
   sync_running: boolean

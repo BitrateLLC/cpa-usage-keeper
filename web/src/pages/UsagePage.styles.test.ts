@@ -13,6 +13,8 @@ const selectSource = readSource(new URL('../components/ui/Select.tsx', import.me
 const apiIndexSource = readSource(new URL('../components/usage/index.ts', import.meta.url))
 const apiClientSource = readSource(new URL('../lib/api.ts', import.meta.url))
 const i18nSource = readSource(new URL('../i18n/index.ts', import.meta.url))
+const apiKeySettingsSource = readSource(new URL('../components/usage/ApiKeySettingsCard.tsx', import.meta.url))
+const sessionSettingsSource = readSource(new URL('../components/usage/SessionSettingsCard.tsx', import.meta.url))
 const analysisPanelSource = readSource(new URL('../components/usage/analysis/AnalysisPanel.tsx', import.meta.url))
 const analysisPanelStyles = readSource(new URL('../components/usage/analysis/AnalysisPanel.module.scss', import.meta.url))
 const overviewRealtimePanelSource = readSource(new URL('../components/usage/OverviewRealtimePanel.tsx', import.meta.url))
@@ -115,7 +117,8 @@ describe('UsagePage toolbar styles', () => {
   })
 
   it('keeps Sign out as the rightmost header action after Check Updates', () => {
-    expect(usagePageSource).toContain("import { ApiError, fetchAnalysis, fetchCpaApiKeyOptions, fetchCpaApiKeySettings, fetchStatus, fetchUpdateCheck, fetchUsageEventModelFilterOptions, fetchUsageEventSourceFilterOptions, fetchUsageEvents, logout, markStatusActive, updateCpaApiKeyAlias } from '@/lib/api';")
+    expect(usagePageSource).toContain('logout')
+    expect(usagePageSource).toContain('fetchUpdateCheck')
     expect(usagePageSource.indexOf("t('usage_stats.check_updates')")).toBeLessThan(usagePageSource.indexOf("t('common.logout')"))
     expect(usagePageStyles).toContain('.signOutSwitcher')
     expect(usagePageStyles).toContain('.signOutPill')
@@ -153,6 +156,37 @@ describe('UsagePage toolbar styles', () => {
     expect(apiKeySettingsMobileBlock).toMatch(/\.apiKeyAliasField\s*\{[\s\S]*?:global\(\.form-group\)\s*\{[\s\S]*?min-width:\s*0;/)
     expect(apiKeySettingsMobileBlock).toMatch(/\.apiKeyAliasField\s*\{[\s\S]*?:global\(\.form-group\)\s*\{[\s\S]*?margin-bottom:\s*0;/)
     expect(apiKeySettingsMobileBlock).toMatch(/\.apiKeyAliasInput\s*\{[\s\S]*?max-width:\s*100%;/)
+  })
+
+  it('keeps Session Management content in a fixed scroll viewport', () => {
+    expect(usagePageStyles).toMatch(/\.sessionSettingsCard:global\(\.card\)\s*\{[\s\S]*?min-height:\s*auto;/)
+    expect(usagePageStyles).toMatch(/\.sessionSettingsBody\s*\{[\s\S]*?flex:\s*0 0 auto;/)
+    expect(usagePageStyles).toMatch(/\.sessionSettingsBody\s*\{[\s\S]*?\n\s{2}height:\s*var\(--settings-list-scroll-height\);/)
+    expect(usagePageStyles).toMatch(/\.sessionSettingsBody\s*\{[\s\S]*?overflow-y:\s*auto;/)
+    expect(usagePageStyles).toMatch(/\.sessionSettingsBody\s*\{[\s\S]*?overflow-x:\s*hidden;/)
+  })
+
+  it('reserves the Session Management action column so current rows keep timestamps aligned', () => {
+    expect(usagePageStyles).toMatch(/\.sessionSettingsItem\s*\{[\s\S]*?grid-template-columns:\s*minmax\(160px, 0\.8fr\) minmax\(220px, 1\.2fr\) minmax\(92px, auto\);/)
+    expect(usagePageStyles).toMatch(/\.sessionSettingsLogoutButton\s*\{[\s\S]*?min-width:\s*92px;/)
+  })
+
+  it('keeps Session and API Key Settings row actions compact like Model Pricing actions', () => {
+    const apiKeyButtonsBlock = usagePageStyles.slice(
+      usagePageStyles.indexOf('.apiKeySettingsCopyButton,'),
+      usagePageStyles.indexOf('.sessionSettingsCard:global(.card)')
+    )
+    const sessionButtonBlock = usagePageStyles.slice(
+      usagePageStyles.indexOf('.sessionSettingsLogoutButton {'),
+      usagePageStyles.indexOf('.sessionSettingsConfirmText')
+    )
+
+    expect(usagePageStyles).toMatch(/\.settingsCompactAction\s*\{[\s\S]*?min-height:\s*32px;/)
+    expect(usagePageStyles).toMatch(/\.settingsCompactAction\s*\{[\s\S]*?padding:\s*7px 12px;/)
+    expect(apiKeyButtonsBlock).not.toContain('min-height: 40px;')
+    expect(sessionButtonBlock).not.toContain('min-height: 40px;')
+    expect(apiKeySettingsSource).toContain('styles.settingsCompactAction')
+    expect(sessionSettingsSource).toContain('styles.settingsCompactAction')
   })
 
   it('keeps Model Pricing Settings list viewport aligned with API Key Settings without shrinking it behind the form', () => {

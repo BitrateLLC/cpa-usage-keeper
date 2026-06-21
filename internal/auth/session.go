@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +20,10 @@ import (
 type SessionStore interface {
 	Save(string, Session) error
 	Get(string) (Session, bool, error)
+	List(time.Time) ([]SessionRecord, error)
 	Delete(string) error
+	DeleteByTokenHash(string) (int64, error)
+	DeleteByRole(Role) (int64, error)
 	DeleteExpired(time.Time) error
 }
 
@@ -39,6 +44,8 @@ func (s *GormSessionStore) Save(token string, session Session) error {
 		Role:        string(session.Role),
 		CPAAPIKeyID: session.CPAAPIKeyID,
 		ExpiresAt:   session.ExpiresAt,
+		CreatedAt:   session.CreatedAt,
+		UpdatedAt:   session.CreatedAt,
 	}
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "token_hash"}},
@@ -64,11 +71,46 @@ func (s *GormSessionStore) Get(token string) (Session, bool, error) {
 	return session, true, nil
 }
 
+func (s *GormSessionStore) List(now time.Time) ([]SessionRecord, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("auth session store is not configured")
+	}
+	var rows []entities.AuthSession
+	if err := s.db.Where("expires_at > ?", timeutil.FormatStorageTime(now)).Order("created_at asc, token_hash asc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	records := make([]SessionRecord, 0, len(rows))
+	for _, row := range rows {
+		record, err := authSessionRecordFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
 func (s *GormSessionStore) Delete(token string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("auth session store is not configured")
 	}
 	return s.db.Unscoped().Where("token_hash = ?", sessionTokenHash(token)).Delete(&entities.AuthSession{}).Error
+}
+
+func (s *GormSessionStore) DeleteByTokenHash(tokenHash string) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("auth session store is not configured")
+	}
+	result := s.db.Unscoped().Where("token_hash = ?", tokenHash).Delete(&entities.AuthSession{})
+	return result.RowsAffected, result.Error
+}
+
+func (s *GormSessionStore) DeleteByRole(role Role) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("auth session store is not configured")
+	}
+	result := s.db.Unscoped().Where("role = ?", string(role)).Delete(&entities.AuthSession{})
+	return result.RowsAffected, result.Error
 }
 
 func (s *GormSessionStore) DeleteExpired(now time.Time) error {
@@ -81,17 +123,35 @@ func (s *GormSessionStore) DeleteExpired(now time.Time) error {
 func authSessionFromRow(row entities.AuthSession) (Session, error) {
 	switch Role(row.Role) {
 	case RoleAdmin:
-		return Session{Role: RoleAdmin, ExpiresAt: row.ExpiresAt}, nil
+		return Session{Role: RoleAdmin, ExpiresAt: row.ExpiresAt, CreatedAt: row.CreatedAt}, nil
 	case RoleAPIKeyViewer:
-		return Session{Role: RoleAPIKeyViewer, CPAAPIKeyID: row.CPAAPIKeyID, ExpiresAt: row.ExpiresAt}, nil
+		return Session{Role: RoleAPIKeyViewer, CPAAPIKeyID: row.CPAAPIKeyID, ExpiresAt: row.ExpiresAt, CreatedAt: row.CreatedAt}, nil
 	default:
 		return Session{}, fmt.Errorf("unknown auth session role %q", row.Role)
 	}
 }
 
+func authSessionRecordFromRow(row entities.AuthSession) (SessionRecord, error) {
+	session, err := authSessionFromRow(row)
+	if err != nil {
+		return SessionRecord{}, err
+	}
+	return SessionRecord{
+		TokenHash:   row.TokenHash,
+		Role:        session.Role,
+		CPAAPIKeyID: session.CPAAPIKeyID,
+		ExpiresAt:   session.ExpiresAt,
+		CreatedAt:   session.CreatedAt,
+	}, nil
+}
+
 func sessionTokenHash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func SessionTokenHash(token string) string {
+	return sessionTokenHash(token)
 }
 
 type Role string
@@ -105,6 +165,20 @@ type Session struct {
 	Role        Role
 	CPAAPIKeyID int64
 	ExpiresAt   time.Time
+	CreatedAt   time.Time
+}
+
+type SessionRecord struct {
+	TokenHash   string
+	Role        Role
+	CPAAPIKeyID int64
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
+}
+
+type RevokeResult struct {
+	Deleted int
+	Tokens  []string
 }
 
 type SessionManager struct {
@@ -150,8 +224,10 @@ func (m *SessionManager) create(session Session) (string, time.Time, error) {
 	defer m.mu.Unlock()
 
 	m.cleanupExpiredLocked()
-	expiresAt := m.now().Add(m.ttl)
+	now := m.now()
+	expiresAt := now.Add(m.ttl)
 	session.ExpiresAt = expiresAt
+	session.CreatedAt = now
 	if m.store != nil {
 		if err := m.store.Save(token, session); err != nil {
 			return "", time.Time{}, fmt.Errorf("save auth session: %w", err)
@@ -183,6 +259,38 @@ func (m *SessionManager) Get(token string) (Session, bool) {
 		return Session{}, false
 	}
 	return session, true
+}
+
+func (m *SessionManager) List() []SessionRecord {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.cleanupExpiredLocked()
+	if m.store != nil {
+		records, err := m.store.List(m.now())
+		if err != nil {
+			panic(fmt.Errorf("list auth sessions: %w", err))
+		}
+		return records
+	}
+
+	records := make([]SessionRecord, 0, len(m.sessions))
+	for token, session := range m.sessions {
+		records = append(records, SessionRecord{
+			TokenHash:   sessionTokenHash(token),
+			Role:        session.Role,
+			CPAAPIKeyID: session.CPAAPIKeyID,
+			ExpiresAt:   session.ExpiresAt,
+			CreatedAt:   session.CreatedAt,
+		})
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].CreatedAt.Equal(records[j].CreatedAt) {
+			return records[i].TokenHash < records[j].TokenHash
+		}
+		return records[i].CreatedAt.Before(records[j].CreatedAt)
+	})
+	return records
 }
 
 func (m *SessionManager) getPersisted(token string) (Session, bool) {
@@ -217,6 +325,62 @@ func (m *SessionManager) getPersisted(token string) (Session, bool) {
 	}
 	m.sessions[token] = session
 	return session, true
+}
+
+func (m *SessionManager) DeleteByTokenHash(tokenHash string) RevokeResult {
+	tokenHash = strings.TrimSpace(tokenHash)
+	if tokenHash == "" {
+		return RevokeResult{}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.cleanupExpiredLocked()
+	result := RevokeResult{}
+	for token := range m.sessions {
+		if sessionTokenHash(token) != tokenHash {
+			continue
+		}
+		delete(m.sessions, token)
+		result.Deleted = 1
+		result.Tokens = append(result.Tokens, token)
+	}
+	if m.store != nil {
+		deleted, err := m.store.DeleteByTokenHash(tokenHash)
+		if err != nil {
+			panic(fmt.Errorf("delete auth session by token hash: %w", err))
+		}
+		if int(deleted) > result.Deleted {
+			result.Deleted = int(deleted)
+		}
+	}
+	return result
+}
+
+func (m *SessionManager) DeleteByRole(role Role) RevokeResult {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.cleanupExpiredLocked()
+	result := RevokeResult{}
+	for token, session := range m.sessions {
+		if session.Role != role {
+			continue
+		}
+		delete(m.sessions, token)
+		result.Deleted++
+		result.Tokens = append(result.Tokens, token)
+	}
+	if m.store != nil {
+		deleted, err := m.store.DeleteByRole(role)
+		if err != nil {
+			panic(fmt.Errorf("delete auth sessions by role: %w", err))
+		}
+		if int(deleted) > result.Deleted {
+			result.Deleted = int(deleted)
+		}
+	}
+	return result
 }
 
 func (m *SessionManager) Delete(token string) {

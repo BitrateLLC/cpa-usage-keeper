@@ -131,6 +131,55 @@ func TestSessionManagerCleanupExpired(t *testing.T) {
 	}
 }
 
+func TestSessionManagerListsSessionsAndRevokesAdminGroup(t *testing.T) {
+	baseTime := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	tokens := []string{"admin-token-1", "admin-token-2", "viewer-token"}
+	manager := NewSessionManager(2 * time.Hour)
+	manager.now = func() time.Time { return baseTime }
+	manager.generate = func() (string, error) {
+		token := tokens[0]
+		tokens = tokens[1:]
+		return token, nil
+	}
+
+	adminToken1, _, err := manager.Create()
+	if err != nil {
+		t.Fatalf("Create admin 1 returned error: %v", err)
+	}
+	adminToken2, _, err := manager.Create()
+	if err != nil {
+		t.Fatalf("Create admin 2 returned error: %v", err)
+	}
+	viewerToken, _, err := manager.CreateAPIKeyViewer(42)
+	if err != nil {
+		t.Fatalf("CreateAPIKeyViewer returned error: %v", err)
+	}
+
+	records := manager.List()
+	if len(records) != 3 {
+		t.Fatalf("expected three active sessions, got %+v", records)
+	}
+	for _, record := range records {
+		if record.TokenHash == "" || record.TokenHash == adminToken1 || record.TokenHash == adminToken2 || record.TokenHash == viewerToken {
+			t.Fatalf("expected list to expose only token hashes, got %+v", record)
+		}
+		if !record.CreatedAt.Equal(baseTime) {
+			t.Fatalf("expected CreatedAt %s, got %s", baseTime, record.CreatedAt)
+		}
+	}
+
+	result := manager.DeleteByRole(RoleAdmin)
+	if result.Deleted != 2 {
+		t.Fatalf("expected two admin sessions to be deleted, got %+v", result)
+	}
+	if manager.Validate(adminToken1) || manager.Validate(adminToken2) {
+		t.Fatal("expected admin sessions to be invalid after role revoke")
+	}
+	if !manager.Validate(viewerToken) {
+		t.Fatal("expected viewer session to remain valid after admin role revoke")
+	}
+}
+
 func TestPersistentSessionManagerLoadsSessionAfterRestart(t *testing.T) {
 	db := openSessionStoreTestDatabase(t)
 	store := NewGormSessionStore(db)
@@ -180,6 +229,38 @@ func TestPersistentSessionManagerLoadsSessionAfterRestart(t *testing.T) {
 	}
 	if restartedStore.getCalls != 1 {
 		t.Fatalf("expected cached restart lookup not to hit store again, got %d calls", restartedStore.getCalls)
+	}
+}
+
+func TestPersistentSessionManagerDeleteByTokenHashClearsStoreAndCache(t *testing.T) {
+	db := openSessionStoreTestDatabase(t)
+	store := NewGormSessionStore(db)
+	baseTime := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	manager := NewPersistentSessionManager(2*time.Hour, store)
+	manager.now = func() time.Time { return baseTime }
+	manager.generate = func() (string, error) { return "persisted-viewer-token", nil }
+
+	token, _, err := manager.CreateAPIKeyViewer(42)
+	if err != nil {
+		t.Fatalf("CreateAPIKeyViewer returned error: %v", err)
+	}
+	if !manager.Validate(token) {
+		t.Fatal("expected created session to validate before revoke")
+	}
+
+	result := manager.DeleteByTokenHash(sessionTokenHash(token))
+	if result.Deleted != 1 {
+		t.Fatalf("expected one session to be deleted, got %+v", result)
+	}
+	if manager.Validate(token) {
+		t.Fatal("expected revoked persisted session to fail validation")
+	}
+	var count int64
+	if err := db.Model(&entities.AuthSession{}).Where("token_hash = ?", sessionTokenHash(token)).Count(&count).Error; err != nil {
+		t.Fatalf("count auth sessions: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected revoked persisted session to be deleted from store, got %d rows", count)
 	}
 }
 
@@ -240,8 +321,20 @@ func (s *trackingSessionStore) Get(token string) (Session, bool, error) {
 	return s.store.Get(token)
 }
 
+func (s *trackingSessionStore) List(now time.Time) ([]SessionRecord, error) {
+	return s.store.List(now)
+}
+
 func (s *trackingSessionStore) Delete(token string) error {
 	return s.store.Delete(token)
+}
+
+func (s *trackingSessionStore) DeleteByTokenHash(tokenHash string) (int64, error) {
+	return s.store.DeleteByTokenHash(tokenHash)
+}
+
+func (s *trackingSessionStore) DeleteByRole(role Role) (int64, error) {
+	return s.store.DeleteByRole(role)
 }
 
 func (s *trackingSessionStore) DeleteExpired(now time.Time) error {
