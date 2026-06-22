@@ -467,6 +467,7 @@ describe('UsagePage toolbar styles', () => {
     const adaptiveColumnIds = [
       'timestamp',
       'reasoning_effort',
+      'service_tier',
       'result',
       'request_type',
       'endpoint',

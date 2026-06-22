@@ -16,7 +16,7 @@ import (
 )
 
 // usageEventProjectionColumns 限制 usage_events 查询列，避免 Overview 和列表页把 RawJSON 等大字段读入内存。
-const usageEventProjectionColumns = "id, api_group_key, provider, auth_type, model, reasoning_effort, executor_type, endpoint, timestamp, source, auth_index, failed, latency_ms, ttft_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_read_tokens, cache_creation_tokens, total_tokens"
+const usageEventProjectionColumns = "id, api_group_key, provider, auth_type, model, reasoning_effort, service_tier, executor_type, endpoint, timestamp, source, auth_index, failed, latency_ms, ttft_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_read_tokens, cache_creation_tokens, total_tokens"
 const analysisLatencyMaxDisplayPoints = 2500
 
 // usageOverviewRawEventProjectionColumns 是 Overview 边界补偿和 realtime DB 兜底的最小事件投影。
@@ -30,6 +30,7 @@ type usageEventProjection struct {
 	AuthType            string
 	Model               string
 	ReasoningEffort     string
+	ServiceTier         string
 	ExecutorType        string
 	Endpoint            string
 	Timestamp           time.Time
@@ -151,6 +152,7 @@ func usageEventProjectionToRecord(event usageEventProjection) dto.UsageEventReco
 		APIGroupKey:         strings.TrimSpace(event.APIGroupKey),
 		Model:               strings.TrimSpace(event.Model),
 		ReasoningEffort:     strings.TrimSpace(event.ReasoningEffort),
+		ServiceTier:         strings.TrimSpace(event.ServiceTier),
 		ExecutorType:        strings.TrimSpace(event.ExecutorType),
 		Endpoint:            strings.TrimSpace(event.Endpoint),
 		AuthType:            strings.TrimSpace(event.AuthType),
@@ -195,6 +197,7 @@ func usageEventProjectionToEntity(event usageEventProjection) entities.UsageEven
 		AuthType:            event.AuthType,
 		Model:               event.Model,
 		ReasoningEffort:     event.ReasoningEffort,
+		ServiceTier:         event.ServiceTier,
 		ExecutorType:        event.ExecutorType,
 		Endpoint:            event.Endpoint,
 		Timestamp:           event.Timestamp,

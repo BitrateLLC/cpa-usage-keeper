@@ -427,6 +427,7 @@ func (s *usageService) ListUsageEvents(_ context.Context, filter servicedto.Usag
 			APIGroupKey:         row.APIGroupKey,
 			Model:               row.Model,
 			ReasoningEffort:     row.ReasoningEffort,
+			ServiceTier:         row.ServiceTier,
 			ExecutorType:        row.ExecutorType,
 			Endpoint:            row.Endpoint,
 			AuthType:            row.AuthType,

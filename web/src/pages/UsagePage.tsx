@@ -80,6 +80,7 @@ const DEFAULT_USAGE_TAB: UsageTab = 'overview';
 const USAGE_TAB_STORAGE_KEY = 'cli-proxy-usage-tab-v1';
 const REQUEST_EVENTS_PAGE_SIZES = [20, 50, 100, 500, 1000] as const;
 const REQUEST_EVENTS_DEFAULT_PAGE_SIZE = 100;
+const REQUEST_EVENTS_PREFERENCES_VERSION = 2;
 const ALL_REQUEST_EVENTS_FILTER = '__all__';
 const OVERVIEW_AUTO_REFRESH_INTERVAL_MS = 10_000;
 export const CUSTOM_DATE_RANGE_BOUNDS_REFRESH_INTERVAL_MS = 60_000;
@@ -177,7 +178,7 @@ type RequestEventFilterOptionsState = {
 };
 
 export type RequestEventsPreferences = {
-  version: 1;
+  version: typeof REQUEST_EVENTS_PREFERENCES_VERSION;
   pageSize: number;
   filters: RequestEventFilterState;
   visibleColumnIds: RequestEventColumnId[];
@@ -192,11 +193,13 @@ const DEFAULT_REQUEST_EVENT_FILTERS: RequestEventFilterState = {
 };
 
 const buildDefaultRequestEventsPreferences = (): RequestEventsPreferences => ({
-  version: 1,
+  version: REQUEST_EVENTS_PREFERENCES_VERSION,
   pageSize: REQUEST_EVENTS_DEFAULT_PAGE_SIZE,
   filters: { ...DEFAULT_REQUEST_EVENT_FILTERS },
   visibleColumnIds: [...REQUEST_EVENT_COLUMN_IDS],
 });
+
+const LEGACY_REQUEST_EVENT_COLUMN_IDS_WITHOUT_SPEED_MODE = REQUEST_EVENT_COLUMN_IDS.filter((columnId) => columnId !== 'service_tier');
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -227,20 +230,32 @@ const normalizeRequestEventPreferenceFilters = (value: unknown): RequestEventFil
   };
 };
 
-const normalizeRequestEventPreferenceColumnIds = (value: unknown): RequestEventColumnId[] => {
+const hasSameRequestEventColumnOrder = (
+  left: readonly RequestEventColumnId[],
+  right: readonly RequestEventColumnId[]
+): boolean => left.length === right.length && left.every((columnId, index) => columnId === right[index]);
+
+const normalizeRequestEventPreferenceColumnIds = (value: unknown, version: unknown): RequestEventColumnId[] => {
   if (!Array.isArray(value)) {
     return [...REQUEST_EVENT_COLUMN_IDS];
   }
-  return normalizeRequestEventVisibleColumnIds(value.filter(isRequestEventColumnId));
+  const normalized = normalizeRequestEventVisibleColumnIds(value.filter(isRequestEventColumnId));
+  if (
+    version !== REQUEST_EVENTS_PREFERENCES_VERSION &&
+    hasSameRequestEventColumnOrder(normalized, LEGACY_REQUEST_EVENT_COLUMN_IDS_WITHOUT_SPEED_MODE)
+  ) {
+    return [...REQUEST_EVENT_COLUMN_IDS];
+  }
+  return normalized;
 };
 
 export const normalizeRequestEventsPreferences = (value: unknown): RequestEventsPreferences => {
   const preferences = isRecord(value) ? value : {};
   return {
-    version: 1,
+    version: REQUEST_EVENTS_PREFERENCES_VERSION,
     pageSize: isRequestEventPageSize(preferences.pageSize) ? preferences.pageSize : REQUEST_EVENTS_DEFAULT_PAGE_SIZE,
     filters: normalizeRequestEventPreferenceFilters(preferences.filters),
-    visibleColumnIds: normalizeRequestEventPreferenceColumnIds(preferences.visibleColumnIds),
+    visibleColumnIds: normalizeRequestEventPreferenceColumnIds(preferences.visibleColumnIds, preferences.version),
   };
 };
 
@@ -1168,7 +1183,7 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
 
   useEffect(() => {
     saveRequestEventsPreferences({
-      version: 1,
+      version: REQUEST_EVENTS_PREFERENCES_VERSION,
       pageSize: eventsPageSize,
       filters: {
         model: eventsModelFilter,

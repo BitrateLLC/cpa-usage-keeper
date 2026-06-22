@@ -205,6 +205,7 @@ export interface UsageEvent {
   api_key?: string
   model: string
   reasoning_effort?: string
+  service_tier?: string
   executor_type?: string
   endpoint?: string
   source: string
