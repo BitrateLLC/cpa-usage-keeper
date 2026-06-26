@@ -1,4 +1,4 @@
-package quota
+package test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cpa-usage-keeper/internal/entities"
+	. "cpa-usage-keeper/internal/quota"
 
 	"github.com/sirupsen/logrus"
 	logrustest "github.com/sirupsen/logrus/hooks/test"
@@ -32,7 +33,7 @@ func TestApplyUsageHeaderSnapshotWritesCompletedCacheWithWindowUsageStats(t *tes
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), UsageHeaderSnapshot{
+	applied := applyUsageHeaderSnapshot(service, context.Background(), UsageHeaderSnapshot{
 		AuthType:   "oauth",
 		AuthIndex:  "codex-auth",
 		Provider:   "codex",
@@ -84,7 +85,7 @@ func TestApplyUsageHeaderSnapshotUsesObservedAtAsWindowUsageStatsEnd(t *testing.
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), UsageHeaderSnapshot{
+	applied := applyUsageHeaderSnapshot(service, context.Background(), UsageHeaderSnapshot{
 		AuthType:   "oauth",
 		AuthIndex:  "codex-auth",
 		Provider:   "codex",
@@ -120,7 +121,7 @@ func TestApplyUsageHeaderSnapshotMatchesUsageIdentityTypeByAuthIndex(t *testing.
 
 	snapshot := codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4")
 	snapshot.Provider = "claude"
-	applied := service.applyUsageHeaderSnapshot(context.Background(), snapshot)
+	applied := applyUsageHeaderSnapshot(service, context.Background(), snapshot)
 	if !applied {
 		t.Fatal("expected auth_index usage identity type to drive codex header matching")
 	}
@@ -139,12 +140,12 @@ func TestApplyUsageHeaderSnapshotIgnoresProviderOnlyCodexWhenIdentityTypeDiffers
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("claude-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("claude-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
 	if applied {
 		t.Fatal("expected non-codex usage identity type to ignore codex-looking headers")
 	}
-	if len(service.refreshTasks) != 0 {
-		t.Fatalf("expected no quota cache task, got %+v", service.refreshTasks)
+	if refreshTaskCount(service) != 0 {
+		t.Fatalf("expected no quota cache task, got %+v", refreshTasks(service))
 	}
 }
 
@@ -153,13 +154,13 @@ func TestApplyUsageHeaderSnapshotSkipsActiveRefreshTask(t *testing.T) {
 	seedUsageIdentity(t, db, entities.UsageIdentity{Identity: "codex-auth", Provider: "codex", Type: "codex", AuthType: entities.UsageIdentityAuthTypeAuthFile})
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{AuthIndex: "codex-auth", Status: RefreshTaskStatusQueued, Source: RefreshSourceManual}
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{AuthIndex: "codex-auth", Status: RefreshTaskStatusQueued, Source: RefreshSourceManual}
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
 	if applied {
 		t.Fatal("expected active refresh task to win over header snapshot")
 	}
-	if task := service.refreshTasks["codex-auth"]; task.Status != RefreshTaskStatusQueued || task.Quota != nil {
+	if task := refreshTasks(service)["codex-auth"]; task.Status != RefreshTaskStatusQueued || task.Quota != nil {
 		t.Fatalf("expected queued task to remain unchanged, got %+v", task)
 	}
 }
@@ -171,7 +172,7 @@ func TestApplyUsageHeaderSnapshotUpdatesRecentCompletedCacheAndCreatesMissingCac
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 	refreshedAt := time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local)
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{
 		AuthIndex:   "codex-auth",
 		Status:      RefreshTaskStatusCompleted,
 		Source:      RefreshSourceManual,
@@ -179,20 +180,20 @@ func TestApplyUsageHeaderSnapshotUpdatesRecentCompletedCacheAndCreatesMissingCac
 		Quota:       &CheckResponse{ID: "codex-auth", Quota: []QuotaRow{{Key: "rate_limit.primary_window", Label: "5h", Scope: "window", UsedPercent: floatPtr(90)}}},
 	}
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", refreshedAt.Add(20*time.Second), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", refreshedAt.Add(20*time.Second), "4"))
 	if !applied {
 		t.Fatal("expected recent newer header to update completed cache")
 	}
-	task := service.refreshTasks["codex-auth"]
+	task := refreshTasks(service)["codex-auth"]
 	if task.Quota == nil || len(task.Quota.Quota) != 1 || task.Quota.Quota[0].UsedPercent == nil || *task.Quota.Quota[0].UsedPercent != 4 {
 		t.Fatalf("expected recent header progress to update cache, got %+v", task)
 	}
 
-	applied = service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("new-codex-auth", refreshedAt.Add(20*time.Second), "8"))
+	applied = applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("new-codex-auth", refreshedAt.Add(20*time.Second), "8"))
 	if !applied {
 		t.Fatal("expected missing cache to be created despite debounce window")
 	}
-	created := service.refreshTasks["new-codex-auth"]
+	created := refreshTasks(service)["new-codex-auth"]
 	if created == nil || created.Quota == nil || len(created.Quota.Quota) != 1 || created.Quota.Quota[0].UsedPercent == nil || *created.Quota.Quota[0].UsedPercent != 8 {
 		t.Fatalf("expected header quota cache creation for missing cache, got %+v", created)
 	}
@@ -211,7 +212,7 @@ func TestApplyUsageHeaderSnapshotUpdatesRecentCompletedCacheAndRefreshesWindowUs
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 	refreshedAt := time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local)
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{
 		AuthIndex:   "codex-auth",
 		Status:      RefreshTaskStatusCompleted,
 		Source:      RefreshSourceManual,
@@ -235,14 +236,14 @@ func TestApplyUsageHeaderSnapshotUpdatesRecentCompletedCacheAndRefreshesWindowUs
 	}
 	t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", refreshedAt.Add(20*time.Second), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", refreshedAt.Add(20*time.Second), "4"))
 	if !applied {
 		t.Fatal("expected recent newer header to update completed cache")
 	}
 	if windowStatsQueries == 0 {
 		t.Fatal("expected recent header update to refresh window stats")
 	}
-	task := service.refreshTasks["codex-auth"]
+	task := refreshTasks(service)["codex-auth"]
 	if task.Quota == nil || len(task.Quota.Quota) != 1 || task.Quota.Quota[0].UsedPercent == nil || *task.Quota.Quota[0].UsedPercent != 4 {
 		t.Fatalf("expected recent header progress to update cache, got %+v", task)
 	}
@@ -263,7 +264,7 @@ func TestApplyUsageHeaderSnapshotsSkipsBatchWhenWindowStatsProviderUnavailable(t
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 
-	service.applyUsageHeaderSnapshots(context.Background(), []UsageHeaderSnapshot{
+	applyUsageHeaderSnapshots(service, context.Background(), []UsageHeaderSnapshot{
 		codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"),
 	})
 
@@ -284,7 +285,7 @@ func TestApplyUsageHeaderSnapshotsAllowsNilService(t *testing.T) {
 	}()
 
 	// 非空 snapshot 批次会越过 len(snapshots)==0 分支，真实覆盖 review 指出的 nil receiver 路径。
-	service.applyUsageHeaderSnapshots(context.Background(), []UsageHeaderSnapshot{
+	applyUsageHeaderSnapshots(service, context.Background(), []UsageHeaderSnapshot{
 		codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"),
 	})
 }
@@ -299,7 +300,7 @@ func TestApplyUsageHeaderSnapshotWarnsOnIdentityDatabaseError(t *testing.T) {
 	service := NewServiceWithRegistry(nil, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 
-	if service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Now(), "4")) {
+	if applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Now(), "4")) {
 		t.Fatal("expected snapshot with database error to be ignored")
 	}
 	for _, entry := range hook.AllEntries() {
@@ -317,7 +318,7 @@ func TestApplyUsageHeaderSnapshotRecoversFailedCacheWithinDebounceAndClearsFailu
 	defer service.StopRefreshTasks()
 	httpStatus := 429
 	refreshedAt := time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local)
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{
 		AuthIndex:      "codex-auth",
 		Status:         RefreshTaskStatusFailed,
 		Error:          "rate limited",
@@ -328,11 +329,11 @@ func TestApplyUsageHeaderSnapshotRecoversFailedCacheWithinDebounceAndClearsFailu
 		Quota:          &CheckResponse{ID: "codex-auth", Quota: []QuotaRow{{Key: "rate_limit.primary_window", Label: "5h", Scope: "window", UsedPercent: floatPtr(90)}}},
 	}
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", refreshedAt.Add(20*time.Second), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", refreshedAt.Add(20*time.Second), "4"))
 	if !applied {
 		t.Fatal("expected failed cache to be recovered by complete header inside debounce window")
 	}
-	task := service.refreshTasks["codex-auth"]
+	task := refreshTasks(service)["codex-auth"]
 	if task.Status != RefreshTaskStatusCompleted || task.Error != "" || task.HTTPStatusCode != nil || !task.ExpiresAt.IsZero() {
 		t.Fatalf("expected failed fields to be cleared after header recovery, got %+v", task)
 	}
@@ -347,7 +348,7 @@ func TestApplyUsageHeaderSnapshotDoesNotOverwriteNewerCompletedCache(t *testing.
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 	newerAt := time.Date(2026, 6, 22, 12, 0, 0, 0, time.Local)
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{
 		AuthIndex:   "codex-auth",
 		Status:      RefreshTaskStatusCompleted,
 		Source:      RefreshSourceManual,
@@ -355,11 +356,11 @@ func TestApplyUsageHeaderSnapshotDoesNotOverwriteNewerCompletedCache(t *testing.
 		Quota:       &CheckResponse{ID: "codex-auth", Quota: []QuotaRow{{Key: "rate_limit.primary_window", Label: "5h", UsedPercent: floatPtr(90)}}},
 	}
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", newerAt.Add(-time.Hour), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", newerAt.Add(-time.Hour), "4"))
 	if applied {
 		t.Fatal("expected older header snapshot to be ignored")
 	}
-	task := service.refreshTasks["codex-auth"]
+	task := refreshTasks(service)["codex-auth"]
 	if task.Quota == nil || len(task.Quota.Quota) != 1 || task.Quota.Quota[0].UsedPercent == nil || *task.Quota.Quota[0].UsedPercent != 90 {
 		t.Fatalf("expected newer cache to remain unchanged, got %+v", task)
 	}
@@ -373,7 +374,7 @@ func TestApplyUsageHeaderSnapshotIgnoresIncompleteWindowWithoutClearingExistingU
 	oldPercent := 80.0
 	oldTokens := int64(999)
 	oldCost := 9.9
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{
 		AuthIndex:   "codex-auth",
 		Status:      RefreshTaskStatusCompleted,
 		Source:      RefreshSourceManual,
@@ -390,7 +391,7 @@ func TestApplyUsageHeaderSnapshotIgnoresIncompleteWindowWithoutClearingExistingU
 		}}},
 	}
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), UsageHeaderSnapshot{
+	applied := applyUsageHeaderSnapshot(service, context.Background(), UsageHeaderSnapshot{
 		AuthType:   "oauth",
 		AuthIndex:  "codex-auth",
 		Provider:   "codex",
@@ -402,7 +403,7 @@ func TestApplyUsageHeaderSnapshotIgnoresIncompleteWindowWithoutClearingExistingU
 	if applied {
 		t.Fatal("expected incomplete header window to be ignored")
 	}
-	task := service.refreshTasks["codex-auth"]
+	task := refreshTasks(service)["codex-auth"]
 	row := task.Quota.Quota[0]
 	if row.UsedPercent == nil || *row.UsedPercent != oldPercent || row.WindowUsageTokens == nil || *row.WindowUsageTokens != oldTokens || row.WindowUsageCost == nil || *row.WindowUsageCost != oldCost {
 		t.Fatalf("expected existing cache usage fields to remain unchanged, got %#v", row)
@@ -428,7 +429,7 @@ func TestApplyUsageHeaderSnapshotMergesProgressWithManualAuthoritativeFields(t *
 	oldPercent := 80.0
 	oldTokens := int64(999)
 	oldCost := 9.9
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{
 		AuthIndex:   "codex-auth",
 		Status:      RefreshTaskStatusCompleted,
 		Source:      RefreshSourceManual,
@@ -450,11 +451,11 @@ func TestApplyUsageHeaderSnapshotMergesProgressWithManualAuthoritativeFields(t *
 		}}},
 	}
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
 	if !applied {
 		t.Fatal("expected header snapshot to update stale cache")
 	}
-	task := service.refreshTasks["codex-auth"]
+	task := refreshTasks(service)["codex-auth"]
 	if task.Quota == nil || len(task.Quota.Quota) != 1 {
 		t.Fatalf("unexpected merged task: %+v", task)
 	}
@@ -477,7 +478,7 @@ func TestApplyUsageHeaderSnapshotMergesRowsAndPreservesResetCredits(t *testing.T
 	defer service.StopRefreshTasks()
 	credits := 2
 	oldPercent := 61.0
-	service.refreshTasks["codex-auth"] = &RefreshTaskRecord{
+	refreshTasks(service)["codex-auth"] = &RefreshTaskRecord{
 		AuthIndex:   "codex-auth",
 		Status:      RefreshTaskStatusCompleted,
 		Source:      RefreshSourceManual,
@@ -493,11 +494,11 @@ func TestApplyUsageHeaderSnapshotMergesRowsAndPreservesResetCredits(t *testing.T
 		},
 	}
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
+	applied := applyUsageHeaderSnapshot(service, context.Background(), codexUsageHeaderSnapshot("codex-auth", time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local), "4"))
 	if !applied {
 		t.Fatal("expected newer header snapshot to apply")
 	}
-	task := service.refreshTasks["codex-auth"]
+	task := refreshTasks(service)["codex-auth"]
 	if task.Quota == nil || task.Quota.RateLimitResetCreditsAvailableCount == nil || *task.Quota.RateLimitResetCreditsAvailableCount != 2 {
 		t.Fatalf("expected reset credits to be preserved, got %+v", task.Quota)
 	}
@@ -525,7 +526,7 @@ func TestApplyUsageHeaderSnapshotDoesNotBackfillAdditionalLimitUsageStats(t *tes
 	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
 	defer service.StopRefreshTasks()
 
-	applied := service.applyUsageHeaderSnapshot(context.Background(), UsageHeaderSnapshot{
+	applied := applyUsageHeaderSnapshot(service, context.Background(), UsageHeaderSnapshot{
 		AuthType:   "oauth",
 		AuthIndex:  "codex-auth",
 		Provider:   "codex",
@@ -571,12 +572,12 @@ func TestApplyUsageHeaderSnapshotIgnoresUnsupportedSnapshots(t *testing.T) {
 		{AuthType: "oauth", AuthIndex: "codex-auth", Provider: "codex", ObservedAt: time.Now(), Headers: http.Header{"X-Codex-Credits-Has-Credits": []string{"False"}}},
 	}
 	for _, snapshot := range tests {
-		if service.applyUsageHeaderSnapshot(context.Background(), snapshot) {
+		if applyUsageHeaderSnapshot(service, context.Background(), snapshot) {
 			t.Fatalf("expected snapshot to be ignored: %+v", snapshot)
 		}
 	}
-	if len(service.refreshTasks) != 0 {
-		t.Fatalf("expected no header cache tasks, got %+v", service.refreshTasks)
+	if refreshTaskCount(service) != 0 {
+		t.Fatalf("expected no header cache tasks, got %+v", refreshTasks(service))
 	}
 }
 
@@ -596,8 +597,8 @@ func TestNewServiceUsesOneMinuteUsageHeaderSnapshotFlushInterval(t *testing.T) {
 	defer service.StopRefreshTasks()
 
 	// 默认 flush 间隔必须保持 1 分钟，防止高频 header 写 cache 又退回 30s。
-	if service.usageHeaderFlushInterval != time.Minute {
-		t.Fatalf("expected default usage header snapshot flush interval 1m, got %s", service.usageHeaderFlushInterval)
+	if usageHeaderFlushInterval(service) != time.Minute {
+		t.Fatalf("expected default usage header snapshot flush interval 1m, got %s", usageHeaderFlushInterval(service))
 	}
 }
 

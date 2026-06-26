@@ -1,4 +1,4 @@
-package quota
+package test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"cpa-usage-keeper/internal/config"
 	"cpa-usage-keeper/internal/entities"
+	. "cpa-usage-keeper/internal/quota"
 	"cpa-usage-keeper/internal/repository"
 	"cpa-usage-keeper/internal/repository/dto"
 	"cpa-usage-keeper/internal/timeutil"
@@ -75,7 +76,7 @@ func TestAttachWindowUsageStatsNilServiceReturnsOriginalResponse(t *testing.T) {
 		Label: "5h",
 	}}}
 
-	got := service.attachWindowUsageStats(context.Background(), "auth-nil", response, time.Now())
+	got := attachWindowUsageStats(service, context.Background(), "auth-nil", response, time.Now())
 
 	if got.ID != response.ID || len(got.Quota) != 1 || got.Quota[0].Key != response.Quota[0].Key {
 		t.Fatalf("expected nil service to return original response, got %#v", got)
@@ -84,7 +85,8 @@ func TestAttachWindowUsageStatsNilServiceReturnsOriginalResponse(t *testing.T) {
 
 func TestAttachWindowUsageStatsOnlyBackfillsMissingKnownWindowScopeRows(t *testing.T) {
 	db := openQuotaUsageStatsTestDB(t)
-	service := &Service{db: db}
+	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
+	defer service.StopRefreshTasks()
 	windowSeconds := int64(5 * 60 * 60)
 	weeklySeconds := int64(7 * 24 * 60 * 60)
 	monthlySeconds := int64(30 * 24 * 60 * 60)
@@ -102,7 +104,7 @@ func TestAttachWindowUsageStatsOnlyBackfillsMissingKnownWindowScopeRows(t *testi
 		t.Fatalf("seed usage event: %v", err)
 	}
 
-	response := service.attachWindowUsageStats(context.Background(), "auth-pro", CheckResponse{ID: "auth-pro", Quota: []QuotaRow{
+	response := attachWindowUsageStats(service, context.Background(), "auth-pro", CheckResponse{ID: "auth-pro", Quota: []QuotaRow{
 		{
 			Key:               "rate_limit.primary_window",
 			Label:             "5h",
@@ -203,7 +205,8 @@ func TestAttachWindowUsageStatsOnlyBackfillsMissingKnownWindowScopeRows(t *testi
 
 func TestAttachWindowUsageStatsBackfillsBothFieldsWhenProviderWindowUsageIncomplete(t *testing.T) {
 	db := openQuotaUsageStatsTestDB(t)
-	service := &Service{db: db}
+	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
+	defer service.StopRefreshTasks()
 	windowSeconds := int64(5 * 60 * 60)
 	resetAt := time.Date(2026, 6, 2, 5, 0, 0, 0, time.UTC)
 	now := time.Date(2026, 6, 2, 3, 0, 0, 0, time.UTC)
@@ -217,7 +220,7 @@ func TestAttachWindowUsageStatsBackfillsBothFieldsWhenProviderWindowUsageIncompl
 		t.Fatalf("seed usage event: %v", err)
 	}
 
-	response := service.attachWindowUsageStats(context.Background(), "auth-partial", CheckResponse{ID: "auth-partial", Quota: []QuotaRow{
+	response := attachWindowUsageStats(service, context.Background(), "auth-partial", CheckResponse{ID: "auth-partial", Quota: []QuotaRow{
 		{
 			Key:               "rate_limit.primary_window",
 			Label:             "5h",
@@ -254,10 +257,11 @@ func TestAttachWindowUsageStatsBackfillsBothFieldsWhenProviderWindowUsageIncompl
 
 func TestAttachWindowUsageStatsDropsIncompleteProviderWindowUsageWhenFallbackUnavailable(t *testing.T) {
 	db := openQuotaUsageStatsTestDB(t)
-	service := &Service{db: db}
+	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
+	defer service.StopRefreshTasks()
 	windowSeconds := int64(5 * 60 * 60)
 
-	response := service.attachWindowUsageStats(context.Background(), "auth-partial", CheckResponse{ID: "auth-partial", Quota: []QuotaRow{{
+	response := attachWindowUsageStats(service, context.Background(), "auth-partial", CheckResponse{ID: "auth-partial", Quota: []QuotaRow{{
 		Key:               "rate_limit.primary_window",
 		Label:             "5h",
 		Scope:             "window",
@@ -273,7 +277,8 @@ func TestAttachWindowUsageStatsDropsIncompleteProviderWindowUsageWhenFallbackUna
 
 func TestAttachWindowUsageStatsDoesNotBackfillPartialAdditionalOrCodeReviewRows(t *testing.T) {
 	db := openQuotaUsageStatsTestDB(t)
-	service := &Service{db: db}
+	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
+	defer service.StopRefreshTasks()
 	windowSeconds := int64(5 * 60 * 60)
 	resetAt := time.Date(2026, 6, 2, 5, 0, 0, 0, time.UTC)
 	now := time.Date(2026, 6, 2, 3, 0, 0, 0, time.UTC)
@@ -287,7 +292,7 @@ func TestAttachWindowUsageStatsDoesNotBackfillPartialAdditionalOrCodeReviewRows(
 		t.Fatalf("seed usage event: %v", err)
 	}
 
-	response := service.attachWindowUsageStats(context.Background(), "auth-special", CheckResponse{ID: "auth-special", Quota: []QuotaRow{
+	response := attachWindowUsageStats(service, context.Background(), "auth-special", CheckResponse{ID: "auth-special", Quota: []QuotaRow{
 		{
 			Key:               "additional_rate_limits.GPT-5.3-Codex-Spark.primary_window",
 			Label:             "GPT-5.3-Codex-Spark 5h",
@@ -319,7 +324,8 @@ func TestAttachWindowUsageStatsDoesNotBackfillPartialAdditionalOrCodeReviewRows(
 
 func TestAttachWindowUsageStatsPreservesProviderZeroWindowUsage(t *testing.T) {
 	db := openQuotaUsageStatsTestDB(t)
-	service := &Service{db: db}
+	service := NewServiceWithRegistry(db, NewProviderRegistry(nil))
+	defer service.StopRefreshTasks()
 	windowSeconds := int64(5 * 60 * 60)
 	resetAt := time.Date(2026, 6, 2, 5, 0, 0, 0, time.UTC)
 	now := time.Date(2026, 6, 2, 3, 0, 0, 0, time.UTC)
@@ -337,7 +343,7 @@ func TestAttachWindowUsageStatsPreservesProviderZeroWindowUsage(t *testing.T) {
 		t.Fatalf("seed usage event: %v", err)
 	}
 
-	response := service.attachWindowUsageStats(context.Background(), "auth-zero", CheckResponse{ID: "auth-zero", Quota: []QuotaRow{{
+	response := attachWindowUsageStats(service, context.Background(), "auth-zero", CheckResponse{ID: "auth-zero", Quota: []QuotaRow{{
 		Key:               "rate_limit.primary_window",
 		Label:             "5h",
 		Scope:             "window",

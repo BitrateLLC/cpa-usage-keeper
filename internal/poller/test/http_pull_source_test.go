@@ -1,4 +1,4 @@
-package poller
+package poller_test
 
 import (
 	"context"
@@ -6,7 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+	_ "unsafe"
+
+	"cpa-usage-keeper/internal/poller"
 )
+
+//go:linkname httpRawUsageMessage cpa-usage-keeper/internal/poller.httpRawUsageMessage
+func httpRawUsageMessage(item []byte) string
 
 func TestHTTPPullSourcePreservesNullPayloadForBatchCounting(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +27,7 @@ func TestHTTPPullSourcePreservesNullPayloadForBatchCounting(t *testing.T) {
 	}))
 	defer server.Close()
 
-	source := NewHTTPPullSource(server.URL, "management-secret", time.Second, false, 2)
+	source := poller.NewHTTPPullSource(server.URL, "management-secret", time.Second, false, 2)
 	messages, err := source.Pull(context.Background())
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)

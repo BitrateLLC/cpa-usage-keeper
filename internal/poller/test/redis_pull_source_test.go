@@ -1,4 +1,4 @@
-package poller
+package poller_test
 
 import (
 	"bufio"
@@ -10,9 +10,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+	_ "unsafe"
 
 	"cpa-usage-keeper/internal/cpa"
+	"cpa-usage-keeper/internal/poller"
 )
+
+//go:linkname redisPullQueueKeyCandidates cpa-usage-keeper/internal/poller.redisPullQueueKeyCandidates
+func redisPullQueueKeyCandidates() []string
 
 func TestRedisPullSourceFallsBackToLegacyQueueKeyAndReusesSelection(t *testing.T) {
 	addr, wait := newRedisPullScriptedServer(t, []redisPullExpectation{
@@ -21,7 +26,7 @@ func TestRedisPullSourceFallsBackToLegacyQueueKeyAndReusesSelection(t *testing.T
 		{queueKey: cpa.ManagementUsageLegacyQueueKey, response: redisPullArrayResponse("legacy-two")},
 	})
 
-	source := NewRedisPullSource(cpa.RedisQueueOptions{
+	source := poller.NewRedisPullSource(cpa.RedisQueueOptions{
 		RedisAddr:     addr,
 		ManagementKey: "secret",
 		Timeout:       time.Second,
@@ -56,7 +61,7 @@ func TestRedisPullSourceLocksUsageQueueKeyAfterEmptySuccess(t *testing.T) {
 		{queueKey: cpa.ManagementUsageQueueKey, response: redisPullArrayResponse("usage-one")},
 	})
 
-	source := NewRedisPullSource(cpa.RedisQueueOptions{
+	source := poller.NewRedisPullSource(cpa.RedisQueueOptions{
 		RedisAddr:     addr,
 		ManagementKey: "secret",
 		Timeout:       time.Second,
@@ -88,7 +93,7 @@ func TestRedisPullSourceLocksUsageQueueKeyAfterEmptySuccess(t *testing.T) {
 func TestRedisPullSourceNameDoesNotWaitForSelectedPop(t *testing.T) {
 	addr, releaseSecondPop, waitForSecondPop, wait := newRedisPullBlockingSecondPopServer(t)
 
-	source := NewRedisPullSource(cpa.RedisQueueOptions{
+	source := poller.NewRedisPullSource(cpa.RedisQueueOptions{
 		RedisAddr:     addr,
 		ManagementKey: "secret",
 		Timeout:       time.Second,
@@ -142,7 +147,7 @@ func TestRedisPullSourceStopsAfterTwoUnsupportedQueueKeyAttempts(t *testing.T) {
 		{queueKey: cpa.ManagementUsageLegacyQueueKey, response: "-ERR unsupported channel 'queue'\r\n"},
 	})
 
-	source := NewRedisPullSource(cpa.RedisQueueOptions{
+	source := poller.NewRedisPullSource(cpa.RedisQueueOptions{
 		RedisAddr:     addr,
 		ManagementKey: "secret",
 		Timeout:       time.Second,

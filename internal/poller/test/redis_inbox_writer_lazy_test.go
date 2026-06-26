@@ -1,9 +1,11 @@
-package poller
+package poller_test
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"cpa-usage-keeper/internal/poller"
 )
 
 type capturingRedisInboxWriter struct {
@@ -17,10 +19,10 @@ func (w *capturingRedisInboxWriter) Insert(_ context.Context, _ string, messages
 
 func TestControlAwareRedisInboxWriterDelegatesUsageOnlyBatchWithoutCopy(t *testing.T) {
 	delegate := &capturingRedisInboxWriter{}
-	writer := NewControlAwareRedisInboxWriter(delegate, nil)
+	writer := poller.NewControlAwareRedisInboxWriter(delegate, nil)
 	messages := []string{`{"request_id":"one"}`, `{"request_id":"two"}`}
 
-	inserted, err := writer.Insert(context.Background(), RedisIngestSourceHTTPPull, messages, time.Now())
+	inserted, err := writer.Insert(context.Background(), poller.RedisIngestSourceHTTPPull, messages, time.Now())
 	if err != nil {
 		t.Fatalf("Insert returned error: %v", err)
 	}

@@ -1,10 +1,12 @@
-package quota
+package test
 
 import (
 	"math"
 	"net/http"
 	"strconv"
 	"testing"
+
+	. "cpa-usage-keeper/internal/quota"
 )
 
 func TestParseCodexHeaderQuotaParsesPrimarySecondaryAndAdditionalWindows(t *testing.T) {
