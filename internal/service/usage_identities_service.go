@@ -51,12 +51,18 @@ type UsageIdentityProvider interface {
 	ListUsageIdentities(context.Context) ([]entities.UsageIdentity, error)
 	ListActiveUsageIdentities(context.Context) ([]entities.UsageIdentity, error)
 	ListActiveUsageIdentitiesPage(context.Context, ListUsageIdentitiesRequest) (ListUsageIdentitiesResponse, error)
+	UpdateUsageIdentityAlias(context.Context, int64, string) (entities.UsageIdentity, error)
+}
+
+type UsageIdentityServiceOptions struct {
+	OnDisplayNameChanged func(entities.UsageIdentity)
 }
 
 type usageIdentityService struct {
-	db          *gorm.DB
-	recentUsage *repository.UsageRecentEventCache
-	now         func() time.Time
+	db                   *gorm.DB
+	recentUsage          *repository.UsageRecentEventCache
+	now                  func() time.Time
+	onDisplayNameChanged func(entities.UsageIdentity)
 }
 
 func NewUsageIdentityService(db *gorm.DB) UsageIdentityProvider {
@@ -64,7 +70,11 @@ func NewUsageIdentityService(db *gorm.DB) UsageIdentityProvider {
 }
 
 func NewUsageIdentityServiceWithRecentCache(db *gorm.DB, recentUsage *repository.UsageRecentEventCache) UsageIdentityProvider {
-	return &usageIdentityService{db: db, recentUsage: recentUsage, now: time.Now}
+	return NewUsageIdentityServiceWithOptions(db, recentUsage, UsageIdentityServiceOptions{})
+}
+
+func NewUsageIdentityServiceWithOptions(db *gorm.DB, recentUsage *repository.UsageRecentEventCache, options UsageIdentityServiceOptions) UsageIdentityProvider {
+	return &usageIdentityService{db: db, recentUsage: recentUsage, now: time.Now, onDisplayNameChanged: options.OnDisplayNameChanged}
 }
 
 func (s *usageIdentityService) ListUsageIdentities(ctx context.Context) ([]entities.UsageIdentity, error) {
@@ -90,6 +100,23 @@ func (s *usageIdentityService) ListActiveUsageIdentitiesPage(ctx context.Context
 		return ListUsageIdentitiesResponse{}, err
 	}
 	return ListUsageIdentitiesResponse{Items: items, Total: total, TypeCounts: typeCounts, CredentialHealth: s.credentialHealthSnapshots(items)}, nil
+}
+
+func (s *usageIdentityService) UpdateUsageIdentityAlias(ctx context.Context, id int64, alias string) (entities.UsageIdentity, error) {
+	if id <= 0 {
+		return entities.UsageIdentity{}, ErrInvalidID
+	}
+	if err := repository.UpdateUsageIdentityAlias(ctx, s.db, id, alias); err != nil {
+		return entities.UsageIdentity{}, err
+	}
+	updated, err := repository.FindUsageIdentityByID(ctx, s.db, id)
+	if err != nil {
+		return entities.UsageIdentity{}, err
+	}
+	if s.onDisplayNameChanged != nil {
+		s.onDisplayNameChanged(updated)
+	}
+	return updated, nil
 }
 
 func (s *usageIdentityService) credentialHealthSnapshots(items []entities.UsageIdentity) []UsageCredentialHealthSnapshot {

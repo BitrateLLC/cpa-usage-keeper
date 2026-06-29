@@ -175,7 +175,9 @@ func NewWithConfig(cfg config.Config) (*App, error) {
 	}
 
 	usageService := service.NewUsageServiceWithRecentCache(db, recentUsageCache)
-	usageIdentityService := service.NewUsageIdentityServiceWithRecentCache(db, recentUsageCache)
+	usageIdentityService := service.NewUsageIdentityServiceWithOptions(db, recentUsageCache, service.UsageIdentityServiceOptions{
+		OnDisplayNameChanged: quotaService.UpdateUsageIdentityDisplayNameSnapshot,
+	})
 	cpaAPIKeyService := service.NewCPAAPIKeyService(db)
 	authFilesManagementService := service.NewAuthFilesManagementService(cpaClient)
 	if cfg.TLSSkipVerify {

@@ -15,7 +15,7 @@ interface CredentialSectionShellProps {
 }
 
 interface CredentialRowShellProps {
-  title: string
+  title: ReactNode
   subtitle?: ReactNode
   badges: ReactNode
   metrics: ReactNode

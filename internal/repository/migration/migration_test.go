@@ -58,6 +58,7 @@ func TestOrderedMigrationsPreservesExecutionOrder(t *testing.T) {
 		"20260611_remove_usage_event_low_value_indexes",
 		"20260612_replace_redis_inbox_queue_key_with_source",
 		"20260620_create_auth_sessions",
+		"20260629_add_usage_identity_alias",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("expected ordered migrations %v, got %v", want, got)
@@ -105,7 +106,7 @@ func TestOpenDatabaseRunsSchemaMigrationsAndAddsUsageEventRedisFields(t *testing
 	if !db.Migrator().HasColumn(&entities.UsageIdentity{}, "lookup_key") {
 		t.Fatal("expected usage_identities.lookup_key column to exist")
 	}
-	for _, column := range []string{"file_name", "file_path"} {
+	for _, column := range []string{"file_name", "file_path", "alias"} {
 		if !db.Migrator().HasColumn(&entities.UsageIdentity{}, column) {
 			t.Fatalf("expected usage_identities.%s column to exist", column)
 		}
@@ -155,6 +156,7 @@ func TestOpenDatabaseRunsSchemaMigrationsAndAddsUsageEventRedisFields(t *testing
 		"20260611_remove_usage_event_low_value_indexes",
 		"20260612_replace_redis_inbox_queue_key_with_source",
 		"20260620_create_auth_sessions",
+		"20260629_add_usage_identity_alias",
 	}
 	if len(versions) != len(expected) {
 		t.Fatalf("expected migration versions %v, got %v", expected, versions)

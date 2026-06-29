@@ -49,6 +49,7 @@ const (
 	migrationRemoveUsageEventLowValueIndexes        = "20260611_remove_usage_event_low_value_indexes"
 	migrationReplaceRedisInboxQueueKeyWithSource    = "20260612_replace_redis_inbox_queue_key_with_source"
 	migrationCreateAuthSessions                     = "20260620_create_auth_sessions"
+	migrationAddUsageIdentityAlias                  = "20260629_add_usage_identity_alias"
 )
 
 type schemaMigration struct {
@@ -142,6 +143,7 @@ func orderedMigrations() []databaseMigration {
 		{version: migrationRemoveUsageEventLowValueIndexes, run: removeUsageEventLowValueIndexesMigration},
 		{version: migrationReplaceRedisInboxQueueKeyWithSource, run: replaceRedisInboxQueueKeyWithSourceMigration},
 		{version: migrationCreateAuthSessions, run: createAuthSessionsMigration},
+		{version: migrationAddUsageIdentityAlias, run: addUsageIdentityAliasMigration},
 	}
 }
 

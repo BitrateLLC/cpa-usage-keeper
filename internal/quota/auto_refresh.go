@@ -289,7 +289,7 @@ func (s *Service) listAutoRefreshAuthFiles(ctx context.Context) ([]entities.Usag
 	var identities []entities.UsageIdentity
 	// 自动刷新只扫描未删除且未禁用的 Auth Files；AI Provider 和用户停用的 Auth File 都不应产生后台请求。
 	err := s.db.WithContext(ctx).
-		Select("id, name, identity, provider, type, file_name, auth_type, is_deleted, disabled").
+		Select("id, name, alias, identity, provider, type, file_name, auth_type, is_deleted, disabled").
 		Where("auth_type = ? AND is_deleted = ? AND (disabled IS NULL OR disabled = ?)", entities.UsageIdentityAuthTypeAuthFile, false, false).
 		Order("priority IS NULL ASC").
 		Order("priority DESC").

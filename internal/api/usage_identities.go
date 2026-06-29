@@ -1,15 +1,22 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"cpa-usage-keeper/internal/entities"
 	"cpa-usage-keeper/internal/helper"
 	"cpa-usage-keeper/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+const maxUsageIdentityAliasLength = 50
 
 type usageIdentitiesResponse struct {
 	Identities []usageIdentityResponse `json:"identities"`
@@ -32,6 +39,7 @@ type usageIdentityTypeCount struct {
 type usageIdentityResponse struct {
 	ID                         string                         `json:"id"`
 	Name                       string                         `json:"name"`
+	Alias                      *string                        `json:"alias"`
 	DisplayName                string                         `json:"displayName"`
 	AuthType                   entities.UsageIdentityAuthType `json:"auth_type"`
 	AuthTypeName               string                         `json:"auth_type_name"`
@@ -144,6 +152,36 @@ func registerUsageIdentityRoutes(router gin.IRoutes, usageIdentityProvider servi
 		}
 		c.JSON(http.StatusOK, usageIdentitiesResponse{Identities: response})
 	})
+
+	router.PATCH("/usage/identities/:id", func(c *gin.Context) {
+		if usageIdentityProvider == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "usage identity provider is not configured"})
+			return
+		}
+		id, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid usage identity id"})
+			return
+		}
+		alias, ok := parseUpdateUsageIdentityAliasRequest(c)
+		if !ok {
+			return
+		}
+		row, err := usageIdentityProvider.UpdateUsageIdentityAlias(c.Request.Context(), id, alias)
+		if err != nil {
+			if errors.Is(err, service.ErrInvalidID) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid usage identity id"})
+				return
+			}
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "usage identity not found"})
+				return
+			}
+			writeInternalError(c, "update usage identity alias failed", err)
+			return
+		}
+		c.JSON(http.StatusOK, mapUsageIdentityResponse(row))
+	})
 }
 
 func parseUsageIdentitiesPageRequest(c *gin.Context) (service.ListUsageIdentitiesRequest, bool) {
@@ -227,6 +265,7 @@ func mapUsageIdentityResponseWithHealth(item entities.UsageIdentity, health *ser
 	return usageIdentityResponse{
 		ID:                         strconv.FormatInt(item.ID, 10),
 		Name:                       item.Name,
+		Alias:                      item.Alias,
 		DisplayName:                helper.UsageIdentityDisplayName(item),
 		AuthType:                   item.AuthType,
 		AuthTypeName:               item.AuthTypeName,
@@ -259,6 +298,60 @@ func mapUsageIdentityResponseWithHealth(item entities.UsageIdentity, health *ser
 		UpdatedAt:                  item.UpdatedAt,
 		DeletedAt:                  item.DeletedAt,
 		CredentialHealth:           mapUsageCredentialHealthResponse(health),
+	}
+}
+
+func validateUsageIdentityAlias(value string) error {
+	if len([]rune(value)) > maxUsageIdentityAliasLength {
+		return errors.New("alias is too long")
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) || isDisallowedUsageIdentityAliasFormatRune(r) {
+			return errors.New("alias cannot contain control or invisible formatting characters")
+		}
+	}
+	return nil
+}
+
+func parseUpdateUsageIdentityAliasRequest(c *gin.Context) (string, bool) {
+	var payload map[string]json.RawMessage
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return "", false
+	}
+	rawAlias, ok := payload["alias"]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "alias is required"})
+		return "", false
+	}
+	if strings.TrimSpace(string(rawAlias)) == "null" {
+		return "", true
+	}
+	var alias string
+	if err := json.Unmarshal(rawAlias, &alias); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "alias must be a string or null"})
+		return "", false
+	}
+	alias = strings.TrimSpace(alias)
+	if err := validateUsageIdentityAlias(alias); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return "", false
+	}
+	return alias, true
+}
+
+func isDisallowedUsageIdentityAliasFormatRune(r rune) bool {
+	switch {
+	case r == '\u061c' || r == '\u180e' || r == '\u200b' || r == '\u200c' || r == '\u2060' || r == '\ufeff':
+		return true
+	case r == '\u200e' || r == '\u200f':
+		return true
+	case r >= '\u202a' && r <= '\u202e':
+		return true
+	case r >= '\u2066' && r <= '\u2069':
+		return true
+	default:
+		return false
 	}
 }
 

@@ -14,6 +14,14 @@ export const CREDENTIAL_PAGES_REFRESH_INTERVAL_MS = 60 * 1000
 
 const AUTH_FILE_ACTIVE_ONLY_STORAGE_KEY = 'cpa-usage-keeper-auth-files-active-only'
 
+export function mergeUsageIdentityAliasUpdate(current: UsageIdentity, updated: UsageIdentity): UsageIdentity {
+  return {
+    ...current,
+    alias: updated.alias ?? null,
+    displayName: updated.displayName ?? current.displayName,
+  }
+}
+
 const getInitialAuthFileActiveOnly = () => {
   if (typeof window === 'undefined') return false
   return window.localStorage.getItem(AUTH_FILE_ACTIVE_ONLY_STORAGE_KEY) === 'true'
@@ -46,6 +54,7 @@ export interface CredentialPagesState {
   setAiProviderProviderFilter: (filter: CredentialProviderFilterKey) => void
   setAuthFileSort: (sort: UsageIdentityPageSort) => void
   setAiProviderSort: (sort: UsageIdentityPageSort) => void
+  replaceUsageIdentity: (identity: UsageIdentity) => void
   loading: boolean
   error: string
   refresh: () => Promise<void>
@@ -106,6 +115,16 @@ export function useCredentialPages({ enabledAuthFiles, enabledAiProviders, onAut
   const setAiProviderSort = useCallback((sort: UsageIdentityPageSort) => {
     setAiProviderPage(1)
     setAiProviderSortState(sort)
+  }, [])
+  const replaceUsageIdentity = useCallback((identity: UsageIdentity) => {
+    const replaceByID = (items: UsageIdentity[]) => items.map((item) => (item.id === identity.id ? mergeUsageIdentityAliasUpdate(item, identity) : item))
+    if (identity.auth_type === 1) {
+      setAuthFileIdentities(replaceByID)
+      return
+    }
+    if (identity.auth_type === 2) {
+      setAiProviderIdentities(replaceByID)
+    }
   }, [])
 
   const refreshAuthFiles = useCallback(async () => {
@@ -257,6 +276,7 @@ export function useCredentialPages({ enabledAuthFiles, enabledAiProviders, onAut
     setAiProviderProviderFilter,
     setAuthFileSort,
     setAiProviderSort,
+    replaceUsageIdentity,
     loading: (enabledAuthFiles && authFilesLoading) || (enabledAiProviders && aiProvidersLoading),
     error: enabledAuthFiles ? authFilesError : enabledAiProviders ? aiProvidersError : '',
     refresh,

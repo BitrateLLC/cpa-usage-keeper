@@ -7,6 +7,11 @@ import (
 )
 
 func UsageIdentityDisplayName(item entities.UsageIdentity) string {
+	if item.Alias != nil {
+		if alias := strings.TrimSpace(*item.Alias); alias != "" {
+			return alias
+		}
+	}
 	name := strings.TrimSpace(item.Name)
 	provider := strings.TrimSpace(item.Provider)
 	if item.AuthType != entities.UsageIdentityAuthTypeAIProvider {

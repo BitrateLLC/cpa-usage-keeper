@@ -93,7 +93,7 @@ const (
 	UsageIdentityPageSortLastUsedAt    = "last_used_at"
 )
 
-const usageIdentityReadColumns = "id, name, auth_type, auth_type_name, identity, type, provider, lookup_key, prefix, base_url, file_name, file_path, priority, disabled, note, account_id, project_id, active_start, active_until, plan_type, total_requests, success_count, failure_count, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, last_aggregated_usage_event_id, first_used_at, last_used_at, stats_updated_at, is_deleted, created_at, updated_at, deleted_at"
+const usageIdentityReadColumns = "id, name, alias, auth_type, auth_type_name, identity, type, provider, lookup_key, prefix, base_url, file_name, file_path, priority, disabled, note, account_id, project_id, active_start, active_until, plan_type, total_requests, success_count, failure_count, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, last_aggregated_usage_event_id, first_used_at, last_used_at, stats_updated_at, is_deleted, created_at, updated_at, deleted_at"
 
 const usageIdentityAggregationColumns = "id, auth_type, identity, total_requests, success_count, failure_count, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, last_aggregated_usage_event_id, first_used_at, last_used_at"
 
@@ -157,6 +157,42 @@ func ListActiveUsageIdentitiesPage(ctx context.Context, db *gorm.DB, request Lis
 		return nil, 0, nil, fmt.Errorf("list active usage identities page: %w", err)
 	}
 	return identities, total, typeCounts, nil
+}
+
+func FindUsageIdentityByID(ctx context.Context, db *gorm.DB, id int64) (entities.UsageIdentity, error) {
+	var identity entities.UsageIdentity
+	if db == nil {
+		return identity, fmt.Errorf("database is nil")
+	}
+	if err := db.WithContext(ctx).
+		Select(usageIdentityReadColumns).
+		Where("id = ?", id).
+		First(&identity).Error; err != nil {
+		return identity, fmt.Errorf("find usage identity by id: %w", err)
+	}
+	return identity, nil
+}
+
+func UpdateUsageIdentityAlias(ctx context.Context, db *gorm.DB, id int64, alias string) error {
+	if db == nil {
+		return fmt.Errorf("database is nil")
+	}
+	trimmed := strings.TrimSpace(alias)
+	var value any
+	if trimmed != "" {
+		value = trimmed
+	}
+	result := db.WithContext(ctx).
+		Model(&entities.UsageIdentity{}).
+		Where("id = ? AND is_deleted = ?", id, false).
+		Update("alias", value)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func ListActiveUsageIdentityTypeCounts(ctx context.Context, db *gorm.DB, request ListUsageIdentitiesPageRequest) ([]dto.UsageIdentityTypeCount, error) {
@@ -419,6 +455,8 @@ func normalizeUsageIdentities(identities []entities.UsageIdentity, authType enti
 		incomingIdentities = append(incomingIdentities, authIndex)
 
 		identity.ID = 0
+		// alias 是 Keeper-only 展示覆盖，不参与 CPA 同步输入。
+		identity.Alias = nil
 		identity.AuthType = authType
 		identity.Identity = authIndex
 		identity.Name = strings.TrimSpace(identity.Name)

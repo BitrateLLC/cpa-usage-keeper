@@ -9,6 +9,7 @@ import styles from './CredentialSections.module.scss'
 import type { AuthFileCredentialRow, DisplayQuota, PlanTypeTone } from './credentialViewModels'
 import { deleteAuthFiles, setAuthFilesDisabled, type UsageIdentityPageSort } from '@/lib/api'
 import type { UsageQuotaInspectionResult, UsageQuotaInspectionResultStatus, UsageQuotaInspectionStatusResponse } from '@/lib/types'
+import { CredentialAliasEditor, isCredentialAliasEditorDisabled } from './CredentialAliasEditor'
 import { CredentialHealthPanel } from './CredentialHealthPanel'
 import { CredentialProviderFilterIcon } from './CredentialProviderFilterBar'
 import { CredentialBadge, CredentialPriorityBadge, CredentialRowShell, CredentialSectionShell, CredentialTableHeader, CredentialsPagination, MetricPill, RequestMetric, TonePercent, cacheRateTone, capitalize, credentialToneClassName, formatCredentialNumber, successRateTone } from './CredentialSectionShell'
@@ -74,12 +75,14 @@ interface AuthFileCredentialsSectionProps {
   onRefreshQuota: () => Promise<void>
   onRefreshQuotaForAuthIndex: (authIndex: string) => Promise<void>
   onResetQuotaForAuthIndex: (authIndex: string) => Promise<void>
+  aliasSavingId?: string
+  onSaveAlias?: (id: string, alias: string) => Promise<void>
   onRefreshInspectionStatus: () => Promise<void>
   onStartInspection: () => Promise<void>
   onAfterInvalidAccountAction?: () => Promise<void>
 }
 
-export function AuthFileCredentialsSection({ rows, total, page, totalPages, pageSize, activeOnly, sort, loading, quotaRefreshing, quotaRefreshError, quotaAutoRefreshEnabled, quotaInspectionStatus, quotaInspectionLoading, quotaInspectionStarting, quotaInspectionError, onPageChange, onPageSizeChange, onActiveOnlyChange, onSortChange, onRefreshQuota, onRefreshQuotaForAuthIndex, onResetQuotaForAuthIndex, onRefreshInspectionStatus, onStartInspection, onAfterInvalidAccountAction }: AuthFileCredentialsSectionProps) {
+export function AuthFileCredentialsSection({ rows, total, page, totalPages, pageSize, activeOnly, sort, loading, quotaRefreshing, quotaRefreshError, quotaAutoRefreshEnabled, quotaInspectionStatus, quotaInspectionLoading, quotaInspectionStarting, quotaInspectionError, onPageChange, onPageSizeChange, onActiveOnlyChange, onSortChange, onRefreshQuota, onRefreshQuotaForAuthIndex, onResetQuotaForAuthIndex, aliasSavingId, onSaveAlias, onRefreshInspectionStatus, onStartInspection, onAfterInvalidAccountAction }: AuthFileCredentialsSectionProps) {
   const { t } = useTranslation()
   const [inspectionOpen, setInspectionOpen] = useState(false)
   const [quotaUsageMode, setQuotaUsageMode] = useState<QuotaUsageMode>('current')
@@ -169,7 +172,16 @@ export function AuthFileCredentialsSection({ rows, total, page, totalPages, page
         return (
           <CredentialRowShell
             key={row.identity.id || row.identity.identity}
-            title={row.displayName}
+            title={onSaveAlias ? (
+              <CredentialAliasEditor
+                identityId={row.identity.id}
+                displayName={row.displayName}
+                alias={row.identity.alias}
+                saving={aliasSavingId === row.identity.id}
+                disabled={isCredentialAliasEditorDisabled(row.identity.id, row.identity.is_deleted, aliasSavingId)}
+                onSaveAlias={onSaveAlias}
+              />
+            ) : row.displayName}
             subtitle={(
               <span className={styles.credentialIdentityBadges}>
                 <CredentialBadge>{row.typeLabel}</CredentialBadge>

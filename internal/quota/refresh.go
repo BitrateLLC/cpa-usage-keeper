@@ -295,6 +295,22 @@ func (s *Service) ensureRefreshTask(authIndex string, source RefreshSource) (*Re
 	return s.ensureRefreshTaskWithIdentity(authIndex, source, entities.UsageIdentity{Identity: authIndex})
 }
 
+func (s *Service) UpdateUsageIdentityDisplayNameSnapshot(identity entities.UsageIdentity) {
+	if s == nil {
+		return
+	}
+	authIndex := strings.TrimSpace(identity.Identity)
+	if authIndex == "" {
+		return
+	}
+	displayName := helper.UsageIdentityDisplayName(identity)
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if task, ok := s.refreshTasks[authIndex]; ok {
+		task.Name = displayName
+	}
+}
+
 func (s *Service) ensureRefreshTaskWithIdentity(authIndex string, source RefreshSource, identity entities.UsageIdentity) (*RefreshTaskRecord, bool) {
 	// auth_index 本身就是任务唯一标识；queued/running 时直接拒绝重复入队，避免重复打到上游接口。
 	// now 使用 storage time 归一化，保证任务时间字段和数据库/前端时间口径一致。

@@ -340,6 +340,28 @@ func TestRefreshTaskStoresUsageIdentityDisplayName(t *testing.T) {
 	}
 }
 
+func TestUpdateUsageIdentityDisplayNameSnapshotUpdatesExistingRefreshTask(t *testing.T) {
+	service := NewServiceWithRegistry(openQuotaTestDatabase(t), NewProviderRegistry(nil))
+	defer service.StopRefreshTasks()
+	setRefreshTasks(service, map[string]*RefreshTaskRecord{
+		"auth-1": {AuthIndex: "auth-1", Name: "Original Name", Status: RefreshTaskStatusCompleted},
+	})
+	alias := "  Friendly Alias  "
+
+	service.UpdateUsageIdentityDisplayNameSnapshot(entities.UsageIdentity{
+		Identity: "auth-1",
+		Alias:    &alias,
+		Name:     "Upstream Name",
+		Provider: "Claude",
+		AuthType: entities.UsageIdentityAuthTypeAuthFile,
+	})
+
+	task := refreshTaskRecord(service, "auth-1")
+	if task == nil || task.Name != "Friendly Alias" {
+		t.Fatalf("expected existing refresh task name to follow alias display name, got %+v", task)
+	}
+}
+
 func TestRefreshOverwritesPreviousCompletedTaskForSameAuthIndex(t *testing.T) {
 	db := openQuotaTestDatabase(t)
 	seedUsageIdentity(t, db, entities.UsageIdentity{Identity: "auth-1", Provider: "claude", Type: "auth-file", AuthType: entities.UsageIdentityAuthTypeAuthFile})

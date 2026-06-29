@@ -112,6 +112,13 @@ func (s usageIdentitiesStub) ListActiveUsageIdentitiesPage(context.Context, serv
 	return service.ListUsageIdentitiesResponse{Items: s.items, Total: int64(len(s.items))}, s.err
 }
 
+func (s usageIdentitiesStub) UpdateUsageIdentityAlias(context.Context, int64, string) (entities.UsageIdentity, error) {
+	if len(s.items) == 0 {
+		return entities.UsageIdentity{}, s.err
+	}
+	return s.items[0], s.err
+}
+
 func TestUsageEventsReturnsFilteredRows(t *testing.T) {
 	previousLocal := time.Local
 	location, err := time.LoadLocation("Asia/Shanghai")

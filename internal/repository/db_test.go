@@ -56,8 +56,8 @@ func TestOpenDatabaseCreatesFreshDatabaseFromCurrentSchemaWithoutRunningMigratio
 	if err := db.Table("schema_migrations").Count(&count).Error; err != nil {
 		t.Fatalf("count schema migrations: %v", err)
 	}
-	if count != 39 {
-		t.Fatalf("expected fresh database to mark 39 migrations applied, got %d", count)
+	if count != 40 {
+		t.Fatalf("expected fresh database to mark 40 migrations applied, got %d", count)
 	}
 	if strings.Contains(logs.String(), "schema migration started") {
 		t.Fatalf("expected fresh database creation not to run version migrations, got logs:\n%s", logs.String())
@@ -76,6 +76,9 @@ func TestOpenDatabaseCreatesFreshDatabaseFromCurrentSchemaWithoutRunningMigratio
 	}
 	if db.Migrator().HasColumn(&entities.AuthSession{}, "token") {
 		t.Fatal("expected auth_sessions.token column not to exist")
+	}
+	if !db.Migrator().HasColumn(&entities.UsageIdentity{}, "alias") {
+		t.Fatal("expected usage_identities.alias column to exist")
 	}
 	for _, indexName := range []string{
 		"idx_usage_events_api_group_key",

@@ -149,6 +149,27 @@ func TestRunAutoRefreshRunsWhenStatusIsActive(t *testing.T) {
 	}
 }
 
+func TestRunAutoRefreshStoresAliasDisplayName(t *testing.T) {
+	db := openQuotaTestDatabase(t)
+	alias := "Friendly Alias"
+	seedUsageIdentity(t, db, entities.UsageIdentity{Identity: "auth-1", Alias: &alias, Name: "Upstream Name", Provider: "claude", Type: "claude", AuthType: entities.UsageIdentityAuthTypeAuthFile})
+	handler := &refreshHandlerStub{output: ProviderOutput{Result: ClaudeResult{Usage: &ClaudeUsagePayload{FiveHour: &ClaudeUsageWindow{Utilization: 25}}}}}
+	service := newQuotaServiceWithRegistry(t, db, NewProviderRegistry(map[string]ProviderHandler{"claude": handler}))
+	setRefreshCooldown(service, func(time.Duration) {})
+	markBackendPageActiveForAutoRefreshTest(service, time.Now())
+
+	if err := service.RunAutoRefresh(context.Background()); err != nil {
+		t.Fatalf("RunAutoRefresh returned error: %v", err)
+	}
+	waitForRefreshTask(t, service, "auth-1", RefreshTaskStatusCompleted)
+	service.WaitRefreshTasks()
+
+	task := refreshTaskRecord(service, "auth-1")
+	if task == nil || task.Name != "Friendly Alias" {
+		t.Fatalf("expected auto refresh task name to use alias display name, got %+v", task)
+	}
+}
+
 func TestRunAutoRefreshSkipsWhenPreviousAutoRoundIsActive(t *testing.T) {
 	db := openQuotaTestDatabase(t)
 	seedUsageIdentity(t, db, entities.UsageIdentity{Identity: "auth-1", Provider: "claude", Type: "auth-file", AuthType: entities.UsageIdentityAuthTypeAuthFile})

@@ -9,7 +9,7 @@ import {
 import { useCredentialPages } from './useCredentialPages'
 import { useQuotaCache } from './useQuotaCache'
 import { useQuotaInspection } from './useQuotaInspection'
-import { resetUsageQuota, type UsageIdentityPageSort } from '@/lib/api'
+import { ApiError, resetUsageQuota, updateUsageIdentityAlias, type UsageIdentityPageSort } from '@/lib/api'
 import i18n from '@/i18n'
 import type { UsageIdentityTypeCount, UsageQuotaCheckResponse, UsageQuotaInspectionStatusResponse } from '@/lib/types'
 import { quotaRefreshDisplayError, useQuotaRefreshTasks, type QuotaState } from './useQuotaRefreshTasks'
@@ -64,7 +64,9 @@ export interface CredentialsTabData {
   quotaInspectionLoading: boolean
   quotaInspectionStarting: boolean
   quotaInspectionError: string
+  aliasSavingId: string
   refresh: () => Promise<void>
+  saveUsageIdentityAlias: (id: string, alias: string) => Promise<void>
   refreshQuotaForCurrentAuthFilePage: () => Promise<void>
   refreshQuotaForAuthIndex: (authIndex: string) => Promise<void>
   resetQuotaForAuthIndex: (authIndex: string) => Promise<void>
@@ -91,6 +93,7 @@ export function useCredentialsTabData({ enabledAuthFiles, enabledAiProviders, qu
   })
   const { refreshQuotaForAuthIndex } = quotaRefreshTasks
   const [quotaResetStateByAuthIndex, setQuotaResetStateByAuthIndex] = useState<Record<string, CredentialResetState>>({})
+  const [aliasSavingId, setAliasSavingId] = useState('')
   const quotaInspection = useQuotaInspection({
     enabled: enabledAuthFiles,
     onAuthRequired,
@@ -115,6 +118,25 @@ export function useCredentialsTabData({ enabledAuthFiles, enabledAiProviders, qu
   const refresh = useCallback(async () => {
     await Promise.all([refreshCredentialPages(), refreshQuotaCache()])
   }, [refreshCredentialPages, refreshQuotaCache])
+
+  const saveUsageIdentityAlias = useCallback(async (id: string, alias: string) => {
+    setAliasSavingId(id)
+    try {
+      const updated = await updateUsageIdentityAlias(id, alias)
+      credentialPages.replaceUsageIdentity(updated)
+      onNotice?.('success', i18n.t('usage_stats.credentials_alias_save_success'))
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        if (onAuthRequired) {
+          onAuthRequired()
+        }
+      }
+      onNotice?.('error', i18n.t('usage_stats.credentials_alias_save_failed'))
+      throw error
+    } finally {
+      setAliasSavingId((current) => (current === id ? '' : current))
+    }
+  }, [credentialPages, onAuthRequired, onNotice])
 
   const resetQuotaForAuthIndex = useCallback(async (authIndex: string) => {
     setQuotaResetStateByAuthIndex((current) => ({
@@ -177,7 +199,9 @@ export function useCredentialsTabData({ enabledAuthFiles, enabledAiProviders, qu
     quotaInspectionLoading: quotaInspection.quotaInspectionLoading,
     quotaInspectionStarting: quotaInspection.quotaInspectionStarting,
     quotaInspectionError: quotaInspection.quotaInspectionError,
+    aliasSavingId,
     refresh: refresh,
+    saveUsageIdentityAlias,
     refreshQuotaForCurrentAuthFilePage: quotaRefreshTasks.refreshQuotaForCurrentAuthFilePage,
     refreshQuotaForAuthIndex: quotaRefreshTasks.refreshQuotaForAuthIndex,
     resetQuotaForAuthIndex,

@@ -45,6 +45,13 @@ func (s usageIdentitiesStub) ListActiveUsageIdentitiesPage(_ context.Context, re
 	return service.ListUsageIdentitiesResponse{Items: s.items, Total: int64(len(s.items)), TypeCounts: s.pagedTypeCounts}, s.err
 }
 
+func (s usageIdentitiesStub) UpdateUsageIdentityAlias(context.Context, int64, string) (entities.UsageIdentity, error) {
+	if len(s.items) == 0 {
+		return entities.UsageIdentity{}, s.err
+	}
+	return s.items[0], s.err
+}
+
 func TestUsageIdentitiesRouteReturnsMetadataStatsAndActiveRows(t *testing.T) {
 	firstUsedAt := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
 	lastUsedAt := time.Date(2026, 5, 4, 9, 0, 0, 0, time.UTC)

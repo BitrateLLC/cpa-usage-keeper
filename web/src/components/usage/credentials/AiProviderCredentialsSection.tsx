@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import styles from './CredentialSections.module.scss'
 import type { AiProviderCredentialRow } from './credentialViewModels'
 import type { UsageIdentityPageSort } from '@/lib/api'
+import { CredentialAliasEditor, isCredentialAliasEditorDisabled } from './CredentialAliasEditor'
 import { CredentialHealthPanel } from './CredentialHealthPanel'
 import { CredentialBadge, CredentialPriorityBadge, CredentialRowShell, CredentialSectionShell, CredentialTableHeader, CredentialsPagination, MetricPill, RequestMetric, TonePercent, cacheRateTone, formatCredentialNumber, successRateTone } from './CredentialSectionShell'
 
@@ -13,12 +14,14 @@ interface AiProviderCredentialsSectionProps {
   pageSize: number
   sort: UsageIdentityPageSort
   loading: boolean
+  aliasSavingId?: string
+  onSaveAlias?: (id: string, alias: string) => Promise<void>
   onPageChange: (page: number) => void
   onPageSizeChange: (pageSize: number) => void
   onSortChange: (sort: UsageIdentityPageSort) => void
 }
 
-export function AiProviderCredentialsSection({ rows, total, page, totalPages, pageSize, sort, loading, onPageChange, onPageSizeChange, onSortChange }: AiProviderCredentialsSectionProps) {
+export function AiProviderCredentialsSection({ rows, total, page, totalPages, pageSize, sort, loading, aliasSavingId, onSaveAlias, onPageChange, onPageSizeChange, onSortChange }: AiProviderCredentialsSectionProps) {
   const { t } = useTranslation()
 
   return (
@@ -43,7 +46,16 @@ export function AiProviderCredentialsSection({ rows, total, page, totalPages, pa
       {rows.map((row) => (
         <CredentialRowShell
           key={row.identity.id || row.identity.identity}
-          title={row.displayName}
+          title={onSaveAlias ? (
+            <CredentialAliasEditor
+              identityId={row.identity.id}
+              displayName={row.displayName}
+              alias={row.identity.alias}
+              saving={aliasSavingId === row.identity.id}
+              disabled={isCredentialAliasEditorDisabled(row.identity.id, row.identity.is_deleted, aliasSavingId)}
+              onSaveAlias={onSaveAlias}
+            />
+          ) : row.displayName}
           subtitle={(
             <span className={styles.credentialIdentityBadges}>
               <CredentialBadge>{row.typeLabel}</CredentialBadge>

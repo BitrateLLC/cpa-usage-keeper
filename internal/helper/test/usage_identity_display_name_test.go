@@ -20,6 +20,31 @@ func TestDisplayNameFormatsProviderPrefixWithoutName(t *testing.T) {
 	}
 }
 
+func TestDisplayNamePrefersUsageIdentityAlias(t *testing.T) {
+	alias := "  Friendly Account  "
+	authFile := entities.UsageIdentity{
+		Alias:    &alias,
+		Name:     "Upstream Auth Name",
+		AuthType: entities.UsageIdentityAuthTypeAuthFile,
+		Identity: "auth-1",
+	}
+	provider := entities.UsageIdentity{
+		Alias:    &alias,
+		Name:     "Provider Name",
+		Prefix:   "Team Prefix",
+		BaseURL:  "https://api.openai.com/v1",
+		AuthType: entities.UsageIdentityAuthTypeAIProvider,
+		Identity: "provider-auth-index",
+	}
+
+	if got := helper.UsageIdentityDisplayName(authFile); got != "Friendly Account" {
+		t.Fatalf("expected auth file displayName to prefer trimmed alias, got %q", got)
+	}
+	if got := helper.UsageIdentityDisplayName(provider); got != "Friendly Account" {
+		t.Fatalf("expected AI provider displayName to prefer trimmed alias, got %q", got)
+	}
+}
+
 func TestDisplayNameFormatsProviderPrefixAndBaseURL(t *testing.T) {
 	withPrefix := entities.UsageIdentity{
 		Name:     "Provider Name",
