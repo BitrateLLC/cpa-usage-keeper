@@ -461,13 +461,13 @@ describe('AuthFileCredentialsSection inspection controls', () => {
     expect(isAutoRefreshSettingsControlDisabled({ loading: false, saving: false, loaded: true })).toBe(false)
   })
 
-  it('allows the auto refresh settings form to recover after a load failure', () => {
+  it('keeps fallback auto refresh settings visible but unsaveable after a load failure', () => {
     const fallback = resolveQuotaAutoRefreshSettingsLoadFailure(new Error('settings table missing'), 'load failed')
 
     expect(fallback.settings).toEqual({ enabled: false, schedule: null })
     expect(fallback.error).toBe('settings table missing')
-    expect(isAutoRefreshSettingsControlDisabled({ loading: false, saving: false, loaded: fallback.loaded })).toBe(false)
-    expect(isAutoRefreshSettingsSaveDisabled({ loading: false, saving: false, loaded: fallback.loaded })).toBe(false)
+    expect(isAutoRefreshSettingsControlDisabled({ loading: false, saving: false, loaded: fallback.loaded })).toBe(true)
+    expect(isAutoRefreshSettingsSaveDisabled({ loading: false, saving: false, loaded: fallback.loaded })).toBe(true)
   })
 
   it('keeps auto refresh controls in a separate modal with the Auth Files switch style', () => {
@@ -497,8 +497,52 @@ describe('AuthFileCredentialsSection inspection controls', () => {
     expect(html).toContain('credentialAutoRefreshUnitSuffix')
     expect(html).toContain('usage_stats.credentials_auto_refresh_value')
     expect(html).toContain('usage_stats.credentials_auto_refresh_unit_hour')
+    expect(html).toContain('usage_stats.credentials_auto_refresh_tip_hour')
     expect(html).toContain('usage_stats.credentials_auto_refresh_save')
     expect(html).not.toContain('credentialAutoRefreshField')
+  })
+
+  it('renders frequency-specific scheduled refresh tips', () => {
+    for (const unit of ['minute', 'hour', 'day', 'week'] as const) {
+      const html = renderToStaticMarkup(createElement(QuotaAutoRefreshSettingsModal, {
+        open: true,
+        enabled: true,
+        unit,
+        value: unit === 'week' ? '1' : '6',
+        loading: false,
+        saving: false,
+        loaded: true,
+        error: '',
+        onClose: () => undefined,
+        onEnabledChange: () => undefined,
+        onUnitChange: () => undefined,
+        onValueChange: () => undefined,
+        onSave: async () => undefined,
+      }))
+
+      expect(html).toContain(`usage_stats.credentials_auto_refresh_tip_${unit}`)
+    }
+  })
+
+  it('does not repeat the weekly unit after the weekday selector', () => {
+    const html = renderToStaticMarkup(createElement(QuotaAutoRefreshSettingsModal, {
+      open: true,
+      enabled: true,
+      unit: 'week',
+      value: '1',
+      loading: false,
+      saving: false,
+      loaded: true,
+      error: '',
+      onClose: () => undefined,
+      onEnabledChange: () => undefined,
+      onUnitChange: () => undefined,
+      onValueChange: () => undefined,
+      onSave: async () => undefined,
+    }))
+
+    expect(html.match(/usage_stats\.credentials_auto_refresh_unit_week/g)).toHaveLength(1)
+    expect(html).toContain('usage_stats.credentials_auto_refresh_weekday')
   })
 
   it('keeps the schedule area mounted but collapsed when auto refresh is off', () => {

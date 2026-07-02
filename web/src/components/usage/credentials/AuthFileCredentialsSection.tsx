@@ -571,11 +571,11 @@ export function isAutoRefreshSettingsControlDisabled({
   return loading || saving || !loaded
 }
 
-export function resolveQuotaAutoRefreshSettingsLoadFailure(nextError: unknown, fallbackMessage: string): { settings: QuotaAutoRefreshSettings; error: string; loaded: true } {
+export function resolveQuotaAutoRefreshSettingsLoadFailure(nextError: unknown, fallbackMessage: string): { settings: QuotaAutoRefreshSettings; error: string; loaded: false } {
   return {
     settings: { enabled: false, schedule: null },
     error: nextError instanceof Error && nextError.message ? nextError.message : fallbackMessage,
-    loaded: true,
+    loaded: false,
   }
 }
 
@@ -1062,7 +1062,6 @@ export function QuotaAutoRefreshSettingsModal({
                     <option key={weekday} value={weekday}>{t(`usage_stats.credentials_auto_refresh_weekday_${weekday}`)}</option>
                   ))}
                 </select>
-                <span className={styles.credentialAutoRefreshUnitSuffix}>{t('usage_stats.credentials_auto_refresh_unit_week')}</span>
               </label>
             ) : (
               <label className={styles.credentialAutoRefreshIntervalField}>
@@ -1079,6 +1078,9 @@ export function QuotaAutoRefreshSettingsModal({
                 <span className={styles.credentialAutoRefreshUnitSuffix}>{t(`usage_stats.credentials_auto_refresh_unit_${unit}`)}</span>
               </label>
             )}
+          </div>
+          <div className={styles.credentialAutoRefreshScheduleTip}>
+            {t(`usage_stats.credentials_auto_refresh_tip_${unit}`)}
           </div>
         </div>
         {loading && <div className={styles.credentialEmptyState}>{t('common.loading')}</div>}
