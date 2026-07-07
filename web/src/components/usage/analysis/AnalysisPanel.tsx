@@ -268,7 +268,8 @@ const normalizeRadians = (angle: number) => ((angle % FULL_CIRCLE) + FULL_CIRCLE
 const radiansDistance = (from: number, to: number) => Math.abs(Math.atan2(Math.sin(from - to), Math.cos(from - to)));
 
 const getCompositionArcGeometry = (chart: Chart, dataIndex: number): CompositionArcGeometry | null => {
-  const arc = chart.getDatasetMeta(0).data[dataIndex] as CompositionArcElement | undefined;
+  if (!chart.data?.datasets?.length) return null;
+  const arc = chart.getDatasetMeta(0)?.data?.[dataIndex] as CompositionArcElement | undefined;
   if (!arc) return null;
   const props = arc.getProps
     ? arc.getProps(['x', 'y', 'innerRadius', 'outerRadius', 'startAngle', 'endAngle', 'circumference'], true)
@@ -306,9 +307,10 @@ const isAngleWithinArc = (angle: number, startAngle: number, endAngle: number) =
 
 const isCompositionPointerInsidePaintedArc = (chart: Chart, dataIndex: number, itemCount: number) => {
   const pointer = compositionTooltipPointers.get(chart);
-  if (!pointer || itemCount <= 1 || COMPOSITION_DONUT_SPACING <= 0) return true;
+  if (!pointer) return true;
   const arc = getCompositionArcGeometry(chart, dataIndex);
-  if (!arc) return true;
+  if (!arc) return false;
+  if (itemCount <= 1 || COMPOSITION_DONUT_SPACING <= 0) return true;
 
   const dx = pointer.x - arc.x;
   const dy = pointer.y - arc.y;
@@ -930,7 +932,11 @@ function createCompositionTooltipHandler({
     const maxWidth = Math.min(COMPOSITION_TOOLTIP_MAX_WIDTH, viewportWidth - COMPOSITION_TOOLTIP_VIEWPORT_PADDING * 2);
     tooltipEl.style.opacity = '1';
     tooltipEl.style.maxWidth = `${maxWidth}px`;
-    const canvasRect = chart.canvas.getBoundingClientRect();
+    const canvasRect = chart.canvas?.getBoundingClientRect();
+    if (!canvasRect) {
+      tooltipEl.style.opacity = '0';
+      return;
+    }
     const tooltipWidth = tooltipEl.offsetWidth || COMPOSITION_TOOLTIP_MAX_WIDTH;
     const tooltipHeight = tooltipEl.offsetHeight || 120;
     const pointer = compositionTooltipPointers.get(chart);
@@ -1305,19 +1311,20 @@ function CompositionPanel({ tabs, loading, isDark }: { tabs: CompositionTab[]; l
             </div>
             <div key={`list-${activeContentKey}`} className={styles.compositionUsageList}>
               {items.map((item, index) => {
-                const percent = clampPercent(toNumber(item.percent));
+                const rawPercent = toNumber(item.percent);
+                const visualPercent = clampPercent(rawPercent);
                 const barStyle = {
-                  width: `${percent}%`,
+                  width: `${visualPercent}%`,
                   '--composition-bar-color': CHART_COLORS[index % CHART_COLORS.length].base,
                 } as CSSProperties;
                 return (
                   <div key={`${activeTab.id}-${item.key}`} className={styles.compositionUsageItem}>
                     <div className={styles.compositionUsageTopline}>
                       <span className={styles.compositionUsageLabel} title={item.label}>{item.label}</span>
-                      <span className={styles.compositionUsageShare} aria-label={t('usage_stats.analysis_composition_token_percent')}>{formatPercent(percent)}</span>
+                      <span className={styles.compositionUsageShare} aria-label={t('usage_stats.analysis_composition_token_percent')}>{formatPercent(rawPercent)}</span>
                     </div>
                     <div className={styles.compositionUsageTrack}>
-                      {percent > 0 && (
+                      {visualPercent > 0 && (
                         <span className={styles.compositionUsageBar} style={barStyle} />
                       )}
                     </div>

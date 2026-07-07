@@ -368,6 +368,7 @@ describe('AnalysisPanel token chart data', () => {
     vi.stubGlobal('window', { innerWidth: 1024, innerHeight: 768 });
 
     const fakeChart = {
+      data: { datasets: [{ data: [1000] }] },
       canvas: {
         getBoundingClientRect: () => ({
           left: 100,
@@ -378,6 +379,17 @@ describe('AnalysisPanel token chart data', () => {
           height: 300,
         }),
       },
+      getDatasetMeta: () => ({
+        data: [{
+          x: 150,
+          y: 150,
+          innerRadius: 70,
+          outerRadius: 140,
+          startAngle: 0,
+          endAngle: Math.PI * 2,
+          circumference: Math.PI * 2,
+        }],
+      }),
     };
 
     chartCapture.doughnutPlugins?.[0]?.beforeEvent?.(fakeChart as never, {
@@ -494,6 +506,7 @@ describe('AnalysisPanel token chart data', () => {
     vi.stubGlobal('window', { innerWidth: 1024, innerHeight: 768 });
 
     const fakeChart = {
+      data: { datasets: [{ data: [750, 250] }] },
       canvas: {
         getBoundingClientRect: () => ({
           left: 0,
@@ -536,6 +549,118 @@ describe('AnalysisPanel token chart data', () => {
 
     const tooltipElement = elements.get('analysis-composition-tooltip');
     expect(tooltipElement?.style.opacity).toBe('0');
+  });
+
+  it('hides the usage distribution tooltip when chart metadata or canvas is unavailable', () => {
+    const analysis: AnalysisResponse = {
+      ...emptyAnalysis,
+      api_key_composition: [{
+        key: '1',
+        label: 'Primary Key',
+        total_tokens: 750,
+        requests: 3,
+        percent: 75,
+        input_tokens: 500,
+        output_tokens: 200,
+        cached_tokens: 50,
+        reasoning_tokens: 0,
+        cost_usd: 0.3,
+        cost_available: true,
+      }],
+    };
+
+    renderToStaticMarkup(<AnalysisPanel analysis={analysis} loading={false} isDark={false} isMobile={false} />);
+
+    const elements = new Map<string, FakeElement>();
+    const fakeDocument = createFakeDocument(elements);
+    vi.stubGlobal('document', fakeDocument);
+    vi.stubGlobal('window', { innerWidth: 1024, innerHeight: 768 });
+
+    const chartWithoutDatasets = {
+      data: { datasets: [] },
+      canvas: {
+        getBoundingClientRect: () => ({ left: 0, top: 0, right: 300, bottom: 300, width: 300, height: 300 }),
+      },
+      getDatasetMeta: () => {
+        throw new Error('metadata should not be read without datasets');
+      },
+    };
+
+    chartCapture.doughnutPlugins?.[0]?.beforeEvent?.(chartWithoutDatasets as never, {
+      event: { type: 'mousemove', x: 150, y: 150, native: null },
+      replay: false,
+      changed: false,
+      cancelable: false,
+      inChartArea: true,
+    } as never, undefined as never);
+    expect(() => chartCapture.doughnutOptions?.plugins?.tooltip?.external?.({
+      chart: chartWithoutDatasets,
+      tooltip: {
+        opacity: 1,
+        caretX: 150,
+        caretY: 150,
+        dataPoints: [{ dataIndex: 0 }],
+      },
+    } as never)).not.toThrow();
+    expect(elements.get('analysis-composition-tooltip')?.style.opacity).toBe('0');
+
+    const chartWithoutCanvas = {
+      data: { datasets: [{ data: [750] }] },
+      canvas: undefined,
+      getDatasetMeta: () => ({
+        data: [{
+          x: 150,
+          y: 150,
+          innerRadius: 70,
+          outerRadius: 140,
+          startAngle: 0,
+          endAngle: Math.PI,
+          circumference: Math.PI,
+        }],
+      }),
+    };
+
+    chartCapture.doughnutPlugins?.[0]?.beforeEvent?.(chartWithoutCanvas as never, {
+      event: { type: 'mousemove', x: 105, y: 150, native: null },
+      replay: false,
+      changed: false,
+      cancelable: false,
+      inChartArea: true,
+    } as never, undefined as never);
+    expect(() => chartCapture.doughnutOptions?.plugins?.tooltip?.external?.({
+      chart: chartWithoutCanvas,
+      tooltip: {
+        opacity: 1,
+        caretX: 105,
+        caretY: 150,
+        dataPoints: [{ dataIndex: 0 }],
+      },
+    } as never)).not.toThrow();
+    expect(elements.get('analysis-composition-tooltip')?.style.opacity).toBe('0');
+  });
+
+  it('shows raw composition percentages while bounding progress bar width', () => {
+    const analysis: AnalysisResponse = {
+      ...emptyAnalysis,
+      api_key_composition: [{
+        key: '1',
+        label: 'Primary Key',
+        total_tokens: 1200,
+        requests: 3,
+        percent: 120,
+        input_tokens: 900,
+        output_tokens: 300,
+        cached_tokens: 0,
+        reasoning_tokens: 0,
+        cost_usd: 0.3,
+        cost_available: true,
+      }],
+    };
+
+    const markup = renderToStaticMarkup(<AnalysisPanel analysis={analysis} loading={false} isDark={false} isMobile={false} />);
+
+    expect(markup).toContain('120.00%');
+    expect(markup).toContain('width:100%');
   });
 
   it('uses a distinct sixth composition color when others are collapsed', () => {
