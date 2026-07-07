@@ -212,6 +212,19 @@ describe('Credential section styles', () => {
     expect(aiProviderSectionSource).toContain('row.priorityLabel')
   })
 
+  it('keeps credential alias edit buttons in a fixed name-cell action slot', () => {
+    expect(credentialStyles).toMatch(/\.credentialDisplayName\s*\{[\s\S]*?width:\s*100%;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasEditor\s*\{[\s\S]*?width:\s*100%;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasDisplayLayout\s*\{[\s\S]*?display:\s*grid;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasDisplayLayout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 28px;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasDisplayLayout\s*\{[\s\S]*?column-gap:\s*8px;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasNameSlot\s*\{[\s\S]*?min-width:\s*0;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasNameSlot\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasActionSlot\s*\{[\s\S]*?width:\s*24px;/)
+    expect(credentialStyles).toMatch(/\.credentialAliasActionSlot\s*\{[\s\S]*?justify-self:\s*start;/)
+    expect(credentialStyles).not.toMatch(/\.credentialAliasDisplay\s*\{/)
+  })
+
   it('keeps Auth Files inspection separate from the quota refresh pill', () => {
     expect(authFileSectionSource).toContain('credentialSectionActionButtons')
     expect(authFileSectionSource).toMatch(/credentialInspectionSwitcher[\s\S]*?credentialInspectionButton[\s\S]*?credentialRefreshSwitcher/)

@@ -48,65 +48,73 @@ export function CredentialAliasEditor({ identityId, displayName, alias, saving, 
   if (editing) {
     return (
       <span className={styles.credentialAliasEditor}>
-        <input
-          className={styles.credentialAliasInput}
-          value={draftAlias}
-          placeholder={t('usage_stats.credentials_alias_placeholder')}
-          disabled={saving}
-          maxLength={50}
-          onChange={(event) => setDraftAlias(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              void saveAlias()
-            }
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              cancelEditing()
-            }
-          }}
-          aria-label={t('usage_stats.credentials_alias_placeholder')}
-          autoFocus
-        />
-        <button
-          type="button"
-          className={styles.credentialAliasIconButton}
-          onClick={() => void saveAlias()}
-          disabled={!canSave}
-          title={saving ? t('usage_stats.credentials_alias_saving') : t('usage_stats.credentials_alias_save')}
-          aria-label={saving ? t('usage_stats.credentials_alias_saving') : t('usage_stats.credentials_alias_save')}
-          aria-busy={saving}
-        >
-          {saving ? <LoadingSpinner size={12} /> : <IconCheck size={13} />}
-        </button>
-        <button
-          type="button"
-          className={styles.credentialAliasIconButton}
-          onClick={cancelEditing}
-          disabled={saving}
-          title={t('usage_stats.credentials_alias_cancel')}
-          aria-label={t('usage_stats.credentials_alias_cancel')}
-        >
-          <IconX size={13} />
-        </button>
+        <span className={styles.credentialAliasEditLayout}>
+          <input
+            className={styles.credentialAliasInput}
+            value={draftAlias}
+            placeholder={t('usage_stats.credentials_alias_placeholder')}
+            disabled={saving}
+            maxLength={50}
+            onChange={(event) => setDraftAlias(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void saveAlias()
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                cancelEditing()
+              }
+            }}
+            aria-label={t('usage_stats.credentials_alias_placeholder')}
+            autoFocus
+          />
+          <span className={styles.credentialAliasEditActions}>
+            <button
+              type="button"
+              className={styles.credentialAliasIconButton}
+              onClick={() => void saveAlias()}
+              disabled={!canSave}
+              title={saving ? t('usage_stats.credentials_alias_saving') : t('usage_stats.credentials_alias_save')}
+              aria-label={saving ? t('usage_stats.credentials_alias_saving') : t('usage_stats.credentials_alias_save')}
+              aria-busy={saving}
+            >
+              {saving ? <LoadingSpinner size={12} /> : <IconCheck size={13} />}
+            </button>
+            <button
+              type="button"
+              className={styles.credentialAliasIconButton}
+              onClick={cancelEditing}
+              disabled={saving}
+              title={t('usage_stats.credentials_alias_cancel')}
+              aria-label={t('usage_stats.credentials_alias_cancel')}
+            >
+              <IconX size={13} />
+            </button>
+          </span>
+        </span>
       </span>
     )
   }
 
   return (
     <span className={styles.credentialAliasEditor}>
-      <span className={styles.credentialAliasDisplay}>{displayName}</span>
-      {canEdit && (
-        <button
-          type="button"
-          className={styles.credentialAliasEditButton}
-          onClick={startEditing}
-          title={t('usage_stats.credentials_alias_edit')}
-          aria-label={t('usage_stats.credentials_alias_edit')}
-        >
-          <IconPencil size={12} />
-        </button>
-      )}
+      <span className={styles.credentialAliasDisplayLayout}>
+        <span className={styles.credentialAliasNameSlot}>{displayName}</span>
+        <span className={styles.credentialAliasActionSlot}>
+          {canEdit && (
+            <button
+              type="button"
+              className={styles.credentialAliasEditButton}
+              onClick={startEditing}
+              title={t('usage_stats.credentials_alias_edit')}
+              aria-label={t('usage_stats.credentials_alias_edit')}
+            >
+              <IconPencil size={12} />
+            </button>
+          )}
+        </span>
+      </span>
     </span>
   )
 }
