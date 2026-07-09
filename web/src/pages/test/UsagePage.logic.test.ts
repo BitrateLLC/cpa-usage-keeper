@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildCustomDateRangeQuery, clampCustomDateRangeToBounds, CUSTOM_DATE_RANGE_BOUNDS_REFRESH_INTERVAL_MS, getBackToCPALinkURL, getCredentialSectionVisibility, getCustomDateRangeBounds, getOverviewDisplayLoading, getTimeRangeOptions, getUsageTabOptions, isCustomDateWithinBounds, isUsagePageVisible, loadRequestEventsPreferences, loadUsagePageVersionInfo, normalizeRequestEventsPreferences, normalizeUsageTabValue, openDateInputPicker, refreshPageData, REQUEST_EVENTS_PREFERENCES_STORAGE_KEY, sanitizeRequestEventFilters, saveRequestEventsPreferences, scheduleCustomDateRangeBoundsRefresh, scheduleOverviewAutoRefresh, shouldAutoRefreshUsageTab, shouldShowApiKeyFilter, shouldShowRangeControls, shouldShowUpdateCheckButton, getUpdateCheckToastDuration } from '../UsagePage';
+import { buildCustomDateRangeQuery, clampCustomDateRangeToBounds, CUSTOM_DATE_RANGE_BOUNDS_REFRESH_INTERVAL_MS, getBackToCPALinkURL, getCredentialSectionVisibility, getCustomDateRangeBounds, getOverviewDisplayLoading, getTimeRangeOptions, getUsageTabOptions, isCustomDateWithinBounds, isUsagePageVisible, loadRequestEventsPreferences, loadUsagePageVersionInfo, normalizeRequestEventsPreferences, normalizeUsageTabValue, openDateInputPicker, refreshPageData, REQUEST_EVENTS_PREFERENCES_STORAGE_KEY, runUsageEventRequestLogDownload, sanitizeRequestEventFilters, saveRequestEventsPreferences, scheduleCustomDateRangeBoundsRefresh, scheduleOverviewAutoRefresh, shouldAutoRefreshUsageTab, shouldShowApiKeyFilter, shouldShowRangeControls, shouldShowUpdateCheckButton, getUpdateCheckToastDuration } from '../UsagePage';
 import { REQUEST_EVENT_COLUMN_IDS } from '@/components/usage/RequestEventsDetailsCard';
 import { ApiError } from '@/lib/api';
 import type { UsageFilterWindow, VersionResponse } from '@/lib/types';
@@ -732,5 +732,38 @@ describe('UsagePage refresh action', () => {
 
     expect(refreshCalls).toBe(1);
     expect(syncCalls).toBe(0);
+  });
+});
+
+describe('UsagePage request log download guard', () => {
+  it('does not trigger a stale native download after the modal is closed', async () => {
+    const generationRef = { current: 0 };
+    let resolveDownloadURL: (url: string) => void = () => undefined;
+    const createDownloadURL = vi.fn(() => new Promise<string>((resolve) => {
+      resolveDownloadURL = resolve;
+    }));
+    const triggerDownload = vi.fn();
+    const setDownloading = vi.fn();
+    const showDownloadError = vi.fn();
+
+    const pendingDownload = runUsageEventRequestLogDownload({
+      eventId: ' 42 ',
+      generationRef,
+      createDownloadURL,
+      triggerDownload,
+      setDownloading,
+      showDownloadError,
+    });
+
+    expect(createDownloadURL).toHaveBeenCalledWith('42');
+    expect(setDownloading).toHaveBeenCalledWith(true);
+
+    generationRef.current += 1;
+    resolveDownloadURL('/api/v1/usage/events/42/request-log/download-file?token=abc');
+    await pendingDownload;
+
+    expect(triggerDownload).not.toHaveBeenCalled();
+    expect(showDownloadError).not.toHaveBeenCalled();
+    expect(setDownloading).toHaveBeenCalledTimes(1);
   });
 });

@@ -347,6 +347,19 @@ type UsagePageVersionInfoOptions = {
   onAuthRequired?: () => void;
 };
 
+type RequestLogDownloadGenerationRef = {
+  current: number;
+};
+
+type UsageEventRequestLogDownloadOptions = {
+  eventId: string;
+  generationRef: RequestLogDownloadGenerationRef;
+  createDownloadURL?: (eventId: string) => Promise<string>;
+  triggerDownload?: (url: string) => void;
+  setDownloading: (downloading: boolean) => void;
+  showDownloadError: (error: unknown) => void;
+};
+
 export const loadUsagePageVersionInfo = async ({
   loadVersion,
   signal,
@@ -369,6 +382,32 @@ export const loadUsagePageVersionInfo = async ({
 
 export const refreshPageData = async ({ refreshActiveTab }: RefreshPageDataOptions) => {
   await refreshActiveTab();
+};
+
+export const runUsageEventRequestLogDownload = async ({
+  eventId,
+  generationRef,
+  createDownloadURL = createUsageEventRequestLogDownloadURL,
+  triggerDownload = triggerBrowserURLDownload,
+  setDownloading,
+  showDownloadError,
+}: UsageEventRequestLogDownloadOptions) => {
+  const normalizedEventId = eventId.trim();
+  if (!normalizedEventId) return;
+  const generation = generationRef.current;
+  setDownloading(true);
+  try {
+    const downloadURL = await createDownloadURL(normalizedEventId);
+    if (generationRef.current !== generation) return;
+    triggerDownload(downloadURL);
+  } catch (error) {
+    if (generationRef.current !== generation) return;
+    showDownloadError(error);
+  } finally {
+    if (generationRef.current === generation) {
+      setDownloading(false);
+    }
+  }
 };
 
 export const getOverviewDisplayLoading = ({ loading, hasUsage }: { loading: boolean; hasUsage: boolean }) => loading && !hasUsage;
@@ -817,6 +856,7 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
   const [requestLogError, setRequestLogError] = useState('');
   const [requestLogLoadingEventId, setRequestLogLoadingEventId] = useState<string | null>(null);
   const [requestLogDownloading, setRequestLogDownloading] = useState(false);
+  const requestLogDownloadGenerationRef = useRef(0);
   const eventsRequestControllerRef = useRef<AbortController | null>(null);
   const eventsFilterOptionsRequestControllerRef = useRef<AbortController | null>(null);
   const requestLogControllerRef = useRef<AbortController | null>(null);
@@ -1439,6 +1479,7 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
   }, [onAuthRequired, t]);
 
   const handleRequestLogClose = useCallback(() => {
+    requestLogDownloadGenerationRef.current += 1;
     requestLogControllerRef.current?.abort();
     requestLogControllerRef.current = null;
     setRequestLogLoadingEventId(null);
@@ -1448,21 +1489,19 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
   }, []);
 
   const handleRequestLogDownload = useCallback(async (eventId: string) => {
-    const normalizedEventId = eventId.trim();
-    if (!normalizedEventId) return;
-    setRequestLogDownloading(true);
-    try {
-      const downloadURL = await createUsageEventRequestLogDownloadURL(normalizedEventId);
-      triggerBrowserURLDownload(downloadURL);
-    } catch (error) {
+    requestLogDownloadGenerationRef.current += 1;
+    await runUsageEventRequestLogDownload({
+      eventId,
+      generationRef: requestLogDownloadGenerationRef,
+      setDownloading: setRequestLogDownloading,
+      showDownloadError: (error) => {
       if (error instanceof ApiError && error.status === 401) {
         onAuthRequired?.();
         return;
       }
       showTopNotice('error', t('notification.download_failed'));
-    } finally {
-      setRequestLogDownloading(false);
-    }
+      },
+    });
   }, [onAuthRequired, showTopNotice, t]);
 
   const refreshActiveTab = useCallback(async () => {

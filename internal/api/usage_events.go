@@ -360,6 +360,7 @@ func streamUsageEventRequestLogDownload(c *gin.Context, requestLogProvider servi
 	if response.ContentLength > 0 {
 		contentLength = response.ContentLength
 	}
+	setNoStoreHeaders(c)
 	c.Header("Content-Disposition", requestLogAttachmentDisposition(filename))
 	c.DataFromReader(http.StatusOK, contentLength, contentType, response.Body, nil)
 }

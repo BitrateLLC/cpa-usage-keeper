@@ -394,6 +394,12 @@ func TestUsageEventRequestLogDownloadStreamsAttachment(t *testing.T) {
 	if resp.Header().Get("Content-Length") != strconv.Itoa(len(body)) {
 		t.Fatalf("expected content length %d, got %q", len(body), resp.Header().Get("Content-Length"))
 	}
+	if resp.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("expected request log download Cache-Control no-store, got %q", resp.Header().Get("Cache-Control"))
+	}
+	if resp.Header().Get("Pragma") != "no-cache" || resp.Header().Get("Expires") != "0" {
+		t.Fatalf("expected request log download no-store companion headers, got Pragma=%q Expires=%q", resp.Header().Get("Pragma"), resp.Header().Get("Expires"))
+	}
 	if resp.Body.String() != body {
 		t.Fatalf("unexpected body: %s", resp.Body.String())
 	}
@@ -442,6 +448,9 @@ func TestUsageEventRequestLogDownloadTokenStreamsAttachmentOnce(t *testing.T) {
 	}
 	if downloadResp.Body.String() != "token raw log" {
 		t.Fatalf("unexpected download body %q", downloadResp.Body.String())
+	}
+	if downloadResp.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("expected token request log download Cache-Control no-store, got %q", downloadResp.Header().Get("Cache-Control"))
 	}
 	if requestLogProvider.downloadCalls != 1 {
 		t.Fatalf("expected one provider download call, got %d", requestLogProvider.downloadCalls)

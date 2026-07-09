@@ -168,7 +168,8 @@ describe('UsagePage toolbar styles', () => {
     expect(apiClientSource).not.toContain('downloadUsageEventRequestLog')
     expect(apiClientSource).not.toContain('getUsageEventRequestLogDownloadURL')
     expect(usagePageSource).toContain('triggerBrowserURLDownload')
-    expect(usagePageSource).toContain('createUsageEventRequestLogDownloadURL(normalizedEventId)')
+    expect(usagePageSource).toContain('createDownloadURL = createUsageEventRequestLogDownloadURL')
+    expect(usagePageSource).toContain('const downloadURL = await createDownloadURL(normalizedEventId)')
     expect(usagePageSource).not.toContain('downloadUsageEventRequestLog(normalizedEventId)')
     const downloadHandler = usagePageSource.slice(
       usagePageSource.indexOf('const handleRequestLogDownload = useCallback'),
