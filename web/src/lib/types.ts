@@ -276,6 +276,9 @@ export interface UsageEventRequestLogResponse {
   filename?: string
   cached: boolean
   available: boolean
+  previewable?: boolean
+  too_large?: boolean
+  downloadable?: boolean
   sections: UsageEventRequestLogSection[]
   raw?: string
 }

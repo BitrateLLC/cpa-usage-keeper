@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -203,6 +204,8 @@ export interface RequestEventsDetailsCardProps {
   requestLogResponse?: UsageEventRequestLogResponse | null;
   requestLogError?: string;
   onRequestLogClose?: () => void;
+  onRequestLogDownload?: (eventId: string) => void;
+  requestLogDownloading?: boolean;
 }
 
 const toNumber = (value: unknown): number => {
@@ -530,6 +533,47 @@ function RequestEventsTitle({ title, subtitle, totalLabel }: { title: string; su
   );
 }
 
+function RequestLogSectionDisclosure({
+  title,
+  content,
+  defaultOpen,
+}: {
+  title: string;
+  content: string;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const panelId = useId();
+
+  return (
+    <section
+      className={`${styles.requestEventsLogSection} ${open ? styles.requestEventsLogSectionOpen : ''}`.trim()}
+    >
+      <button
+        type="button"
+        className={styles.requestEventsLogSectionTrigger}
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+      >
+        <span className={styles.requestEventsLogSectionTitle}>{title}</span>
+        <span className={styles.requestEventsLogSectionChevron} aria-hidden="true">
+          <IconChevronDown size={14} />
+        </span>
+      </button>
+      <div
+        id={panelId}
+        className={styles.requestEventsLogSectionPanel}
+        aria-hidden={!open}
+      >
+        <div className={styles.requestEventsLogSectionPanelInner}>
+          <pre>{content}</pre>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function RequestEventsExportMenu({
   label,
   csvLabel,
@@ -637,6 +681,8 @@ export function RequestEventsDetailsCard({
   requestLogResponse = null,
   requestLogError = '',
   onRequestLogClose,
+  onRequestLogDownload,
+  requestLogDownloading = false,
 }: RequestEventsDetailsCardProps) {
   const { t } = useTranslation();
   const resultLocale = t('usage_stats.success') === 'Success' ? 'en' : 'zh';
@@ -737,7 +783,8 @@ export function RequestEventsDetailsCard({
     onVisibleColumnIdsChange?.(nextColumnIds);
   }, [isColumnSelectionControlled, onVisibleColumnIdsChange, selectedVisibleColumnIds]);
   const requestLogOpen = Boolean(requestLogResponse || requestLogError || requestLogLoadingEventId);
-  const requestLogTitle = t('usage_stats.request_events_log_title');
+  const requestLogTooLarge = requestLogResponse?.too_large === true || (requestLogResponse?.previewable === false && requestLogResponse?.downloadable === true);
+  const requestLogTitle = requestLogTooLarge ? t('usage_stats.request_events_log_too_large_title') : t('usage_stats.request_events_log_title');
   const requestLogRaw = requestLogResponse?.raw ?? '';
   const requestLogSections = requestLogResponse?.sections ?? [];
   const handleDownloadRequestLog = useCallback(() => {
@@ -752,6 +799,14 @@ export function RequestEventsDetailsCard({
     link.remove();
     window.URL.revokeObjectURL(url);
   }, [requestLogRaw, requestLogResponse?.filename, requestLogResponse?.request_id]);
+  const handleRequestLogDownloadAction = useCallback(() => {
+    const eventId = String(requestLogResponse?.event_id ?? '').trim();
+    if (eventId && onRequestLogDownload) {
+      onRequestLogDownload(eventId);
+      return;
+    }
+    handleDownloadRequestLog();
+  }, [handleDownloadRequestLog, onRequestLogDownload, requestLogResponse?.event_id]);
 
   const modelOptions = useMemo(() => {
     const options = [
@@ -867,6 +922,7 @@ export function RequestEventsDetailsCard({
         header: <th className={styles.requestEventsNoWrapCell}>{t('usage_stats.request_events_result')}</th>,
         renderCell: (row) => {
           const resultLabel = row.failed ? t('usage_stats.failure') : t('usage_stats.success');
+          const loading = requestLogLoadingEventId === row.id;
           const resultClassName = row.failed ? styles.requestEventsResultFailed : styles.requestEventsResultSuccess;
           const sourceEvent = events.find((event) => String(event.id ?? '') === row.id);
           const canOpenLog = Boolean(row.requestId && sourceEvent && onRequestLogOpen);
@@ -883,10 +939,11 @@ export function RequestEventsDetailsCard({
                     }
                   }}
                   title={t('usage_stats.request_events_log_hint')}
-                  aria-label={t('usage_stats.request_events_log_open_aria', { result: resultLabel })}
-                  disabled={requestLogLoadingEventId === row.id}
+                  aria-label={loading ? t('usage_stats.request_events_log_loading_aria', { result: resultLabel }) : t('usage_stats.request_events_log_open_aria', { result: resultLabel })}
+                  aria-busy={loading}
+                  disabled={loading}
                 >
-                  <span>{requestLogLoadingEventId === row.id ? t('common.loading') : resultLabel}</span>
+                  <span>{resultLabel}</span>
                   <span className={styles.requestEventsResultLogIcon} aria-hidden="true">
                     <IconScrollText size={9} />
                   </span>
@@ -1150,29 +1207,43 @@ export function RequestEventsDetailsCard({
         open={requestLogOpen}
         title={requestLogTitle}
         onClose={onRequestLogClose ?? (() => undefined)}
-        width={920}
+        width={requestLogTooLarge ? 360 : 920}
+        className={requestLogTooLarge ? styles.requestEventsLargeLogModal : undefined}
         footer={
-          requestLogRaw ? (
-            <Button variant="secondary" size="sm" className={styles.usagePillAction} onClick={handleDownloadRequestLog}>
-              {t('usage_stats.request_events_log_download')}
+          requestLogTooLarge ? (
+            <>
+              <Button variant="secondary" size="sm" className={styles.usagePillAction} onClick={onRequestLogClose ?? (() => undefined)}>
+                {t('common.cancel')}
+              </Button>
+              <Button variant="primary" size="sm" className={styles.usagePillAction} onClick={handleRequestLogDownloadAction} loading={requestLogDownloading}>
+                {requestLogDownloading ? t('common.loading') : t('usage_stats.request_events_log_download')}
+              </Button>
+            </>
+          ) : requestLogRaw ? (
+            <Button variant="secondary" size="sm" className={styles.usagePillAction} onClick={handleRequestLogDownloadAction} loading={requestLogDownloading}>
+              {requestLogDownloading ? t('common.loading') : t('usage_stats.request_events_log_download')}
             </Button>
           ) : undefined
         }
       >
         <div className={styles.requestEventsLogViewer}>
           {requestLogLoadingEventId && !requestLogResponse && !requestLogError ? (
-            <div className={styles.hint}>{t('common.loading')}</div>
+            <div className={styles.hint} role="status" aria-live="polite">{t('common.loading')}</div>
           ) : requestLogError ? (
-            <div className={styles.errorBox}>{requestLogError}</div>
+            <div className={styles.errorBox} role="status" aria-live="polite">{requestLogError}</div>
+          ) : requestLogTooLarge ? (
+            <div className={styles.requestEventsLargeLogPrompt} role="status" aria-live="polite">{t('usage_stats.request_events_log_too_large')}</div>
           ) : requestLogResponse ? (
             <>
               {requestLogSections.length > 0 ? (
                 <div className={styles.requestEventsLogSections}>
                   {requestLogSections.map((section, index) => (
-                    <details key={`${section.title}-${index}`} className={styles.requestEventsLogSection} open={index === 0}>
-                      <summary>{formatRequestLogSectionTitle(section.title, t)}</summary>
-                      <pre>{section.content}</pre>
-                    </details>
+                    <RequestLogSectionDisclosure
+                      key={`${requestLogResponse.event_id}-${section.title}-${index}`}
+                      title={formatRequestLogSectionTitle(section.title, t)}
+                      content={section.content}
+                      defaultOpen={index === 0}
+                    />
                   ))}
                 </div>
               ) : (

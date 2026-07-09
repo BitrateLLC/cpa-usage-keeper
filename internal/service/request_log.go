@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,9 +17,9 @@ import (
 
 const (
 	requestLogCacheTTL         = 10 * time.Minute
-	requestLogNegativeCacheTTL = time.Minute
+	requestLogNegativeCacheTTL = 10 * time.Second
 	requestLogMaxBytes         = 5 * 1024 * 1024
-	requestLogCacheMaxEntries  = 128
+	requestLogCacheMaxBytes    = 100 * 1024 * 1024
 )
 
 var (
@@ -29,20 +30,34 @@ var (
 
 type RequestLogClient interface {
 	FetchRequestLogByID(ctx context.Context, requestID string) (*cpa.RequestLogResult, error)
+	OpenRequestLogByID(ctx context.Context, requestID string) (*cpa.RequestLogStream, error)
 }
 
 type RequestLogProvider interface {
 	GetUsageEventRequestLog(ctx context.Context, eventID int64) (RequestLogResponse, error)
+	DownloadUsageEventRequestLog(ctx context.Context, eventID int64) (RequestLogDownload, error)
 }
 
 type RequestLogResponse struct {
-	EventID   int64
-	RequestID string
-	Filename  string
-	Cached    bool
-	Available bool
-	Sections  []RequestLogSection
-	Raw       string
+	EventID      int64
+	RequestID    string
+	Filename     string
+	Cached       bool
+	Available    bool
+	Previewable  bool
+	TooLarge     bool
+	Downloadable bool
+	Sections     []RequestLogSection
+	Raw          string
+}
+
+type RequestLogDownload struct {
+	EventID      int64
+	RequestID    string
+	Filename     string
+	ContentType  string
+	Body         io.ReadCloser
+	Downloadable bool
 }
 
 type RequestLogSection struct {
@@ -58,6 +73,7 @@ type requestLogService struct {
 	mu            sync.Mutex
 	cache         map[string]requestLogCacheEntry
 	cacheSequence int64
+	cacheBytes    int
 }
 
 type requestLogCacheEntry struct {
@@ -113,21 +129,70 @@ func (s *requestLogService) GetUsageEventRequestLog(ctx context.Context, eventID
 	if result == nil {
 		return RequestLogResponse{}, fmt.Errorf("request log result is nil")
 	}
-	if len(result.Body) > requestLogMaxBytes {
-		return RequestLogResponse{EventID: eventID, RequestID: requestID, Filename: result.Filename, Available: false}, ErrRequestLogTooLarge
+	if result.BodyTruncated || len(result.Body) > requestLogMaxBytes {
+		response := RequestLogResponse{
+			EventID:      eventID,
+			RequestID:    requestID,
+			Filename:     strings.TrimSpace(result.Filename),
+			Available:    true,
+			Previewable:  false,
+			TooLarge:     true,
+			Downloadable: true,
+		}
+		s.setCached(requestID, response, nil, requestLogCacheTTL)
+		return response, nil
 	}
 
 	raw := string(result.Body)
 	response := RequestLogResponse{
-		EventID:   eventID,
-		RequestID: requestID,
-		Filename:  strings.TrimSpace(result.Filename),
-		Available: true,
-		Sections:  ParseRequestLogSections(raw),
-		Raw:       raw,
+		EventID:      eventID,
+		RequestID:    requestID,
+		Filename:     strings.TrimSpace(result.Filename),
+		Available:    true,
+		Previewable:  true,
+		Downloadable: true,
+		Sections:     ParseRequestLogSections(raw),
+		Raw:          raw,
 	}
 	s.setCached(requestID, response, nil, requestLogCacheTTL)
 	return response, nil
+}
+
+func (s *requestLogService) DownloadUsageEventRequestLog(ctx context.Context, eventID int64) (RequestLogDownload, error) {
+	if s == nil {
+		return RequestLogDownload{}, fmt.Errorf("request log service is nil")
+	}
+	if s.db == nil {
+		return RequestLogDownload{}, fmt.Errorf("database is nil")
+	}
+	if s.client == nil {
+		return RequestLogDownload{}, fmt.Errorf("request log client is not configured")
+	}
+	requestID, err := repository.FindUsageEventRequestIDByID(s.db.WithContext(ctx), eventID)
+	if err != nil {
+		return RequestLogDownload{}, err
+	}
+	if requestID == "" {
+		return RequestLogDownload{EventID: eventID, Downloadable: false}, ErrRequestLogMissingID
+	}
+	result, err := s.client.OpenRequestLogByID(ctx, requestID)
+	if err != nil {
+		if result != nil && result.StatusCode == http.StatusNotFound {
+			return RequestLogDownload{EventID: eventID, RequestID: requestID, Downloadable: false}, ErrRequestLogUnavailable
+		}
+		return RequestLogDownload{}, err
+	}
+	if result == nil {
+		return RequestLogDownload{}, fmt.Errorf("request log result is nil")
+	}
+	return RequestLogDownload{
+		EventID:      eventID,
+		RequestID:    requestID,
+		Filename:     strings.TrimSpace(result.Filename),
+		ContentType:  strings.TrimSpace(result.ContentType),
+		Body:         result.Body,
+		Downloadable: true,
+	}, nil
 }
 
 func (s *requestLogService) getCached(requestID string) (requestLogCacheEntry, bool) {
@@ -149,6 +214,9 @@ func (s *requestLogService) setCached(requestID string, response RequestLogRespo
 	defer s.mu.Unlock()
 	now := s.now()
 	s.cacheSequence++
+	if previous, ok := s.cache[requestID]; ok {
+		s.cacheBytes -= requestLogCacheEntrySize(previous)
+	}
 	s.cache[requestID] = requestLogCacheEntry{
 		response:  response,
 		err:       err,
@@ -156,6 +224,7 @@ func (s *requestLogService) setCached(requestID string, response RequestLogRespo
 		createdAt: now,
 		sequence:  s.cacheSequence,
 	}
+	s.cacheBytes += requestLogCacheEntrySize(s.cache[requestID])
 	s.pruneCacheLocked(now)
 }
 
@@ -163,9 +232,10 @@ func (s *requestLogService) pruneCacheLocked(now time.Time) {
 	for requestID, entry := range s.cache {
 		if !now.Before(entry.expiresAt) {
 			delete(s.cache, requestID)
+			s.cacheBytes -= requestLogCacheEntrySize(entry)
 		}
 	}
-	for len(s.cache) > requestLogCacheMaxEntries {
+	for s.cacheBytes > requestLogCacheMaxBytes {
 		oldestRequestID := ""
 		var oldestSequence int64
 		for requestID, entry := range s.cache {
@@ -177,8 +247,22 @@ func (s *requestLogService) pruneCacheLocked(now time.Time) {
 		if oldestRequestID == "" {
 			return
 		}
+		entry := s.cache[oldestRequestID]
 		delete(s.cache, oldestRequestID)
+		s.cacheBytes -= requestLogCacheEntrySize(entry)
 	}
+}
+
+func requestLogCacheEntrySize(entry requestLogCacheEntry) int {
+	size := len(entry.response.Raw) + len(entry.response.Filename) + len(entry.response.RequestID)
+	for _, section := range entry.response.Sections {
+		size += len(section.Title) + len(section.Content)
+	}
+	return size
+}
+
+func RequestLogPreviewMaxBytes() int {
+	return requestLogMaxBytes
 }
 
 func ParseRequestLogSections(raw string) []RequestLogSection {

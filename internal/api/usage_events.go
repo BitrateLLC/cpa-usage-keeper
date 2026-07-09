@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -75,13 +76,16 @@ type usageEventTokenPayload struct {
 }
 
 type usageEventRequestLogPayload struct {
-	EventID   string                        `json:"event_id"`
-	RequestID string                        `json:"request_id,omitempty"`
-	Filename  string                        `json:"filename,omitempty"`
-	Cached    bool                          `json:"cached"`
-	Available bool                          `json:"available"`
-	Sections  []usageEventRequestLogSection `json:"sections"`
-	Raw       string                        `json:"raw,omitempty"`
+	EventID      string                        `json:"event_id"`
+	RequestID    string                        `json:"request_id,omitempty"`
+	Filename     string                        `json:"filename,omitempty"`
+	Cached       bool                          `json:"cached"`
+	Available    bool                          `json:"available"`
+	Previewable  bool                          `json:"previewable"`
+	TooLarge     bool                          `json:"too_large,omitempty"`
+	Downloadable bool                          `json:"downloadable,omitempty"`
+	Sections     []usageEventRequestLogSection `json:"sections"`
+	Raw          string                        `json:"raw,omitempty"`
 }
 
 type usageEventRequestLogSection struct {
@@ -203,6 +207,42 @@ func registerUsageEventsRoute(
 			return
 		}
 		c.JSON(http.StatusOK, buildUsageEventRequestLogPayload(response))
+	})
+
+	router.GET("/usage/events/:id/request-log/download", func(c *gin.Context) {
+		if requestLogProvider == nil {
+			writeInternalError(c, "request log provider is not configured", nil)
+			return
+		}
+		eventID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+		if err != nil || eventID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid usage event id"})
+			return
+		}
+		response, err := requestLogProvider.DownloadUsageEventRequestLog(c.Request.Context(), eventID)
+		if err != nil {
+			writeUsageEventRequestLogError(c, err)
+			return
+		}
+		contentType := strings.TrimSpace(response.ContentType)
+		if contentType == "" {
+			contentType = "text/plain; charset=utf-8"
+		}
+		filename := strings.TrimSpace(response.Filename)
+		if filename == "" {
+			requestID := strings.TrimSpace(response.RequestID)
+			if requestID == "" {
+				requestID = strconv.FormatInt(eventID, 10)
+			}
+			filename = "request-log-" + requestID + ".log"
+		}
+		if response.Body == nil {
+			writeInternalError(c, "request log download body is empty", nil)
+			return
+		}
+		defer response.Body.Close()
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeAttachmentFilename(filename)))
+		c.DataFromReader(http.StatusOK, -1, contentType, response.Body, nil)
 	})
 
 	router.GET("/usage/events/export", func(c *gin.Context) {
@@ -333,13 +373,16 @@ func buildUsageEventRequestLogPayload(response service.RequestLogResponse) usage
 		})
 	}
 	return usageEventRequestLogPayload{
-		EventID:   eventID,
-		RequestID: strings.TrimSpace(response.RequestID),
-		Filename:  strings.TrimSpace(response.Filename),
-		Cached:    response.Cached,
-		Available: response.Available,
-		Sections:  sections,
-		Raw:       response.Raw,
+		EventID:      eventID,
+		RequestID:    strings.TrimSpace(response.RequestID),
+		Filename:     strings.TrimSpace(response.Filename),
+		Cached:       response.Cached,
+		Available:    response.Available,
+		Previewable:  response.Previewable,
+		TooLarge:     response.TooLarge,
+		Downloadable: response.Downloadable,
+		Sections:     sections,
+		Raw:          response.Raw,
 	}
 }
 
@@ -559,6 +602,15 @@ func writeUsageEventsExportError(c *gin.Context, err error) {
 func usageEventsExportFilename(format string) string {
 	timestamp := timeutil.NormalizeStorageTime(time.Now()).Format("20060102-150405")
 	return "usage-events-" + timestamp + "." + format
+}
+
+func sanitizeAttachmentFilename(filename string) string {
+	filename = strings.TrimSpace(filename)
+	filename = strings.NewReplacer("\\", "-", "/", "-", `"`, "").Replace(filename)
+	if filename == "" {
+		return "request-log.log"
+	}
+	return filename
 }
 
 func usageEventExportCSVRecord(event usageEventExportPayload) []string {

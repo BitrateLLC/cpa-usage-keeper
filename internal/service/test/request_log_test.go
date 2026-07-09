@@ -1,11 +1,14 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,11 +24,32 @@ type requestLogClientStub struct {
 	calls  int
 	result *cpa.RequestLogResult
 	err    error
+
+	downloadCalls  int
+	downloadResult *cpa.RequestLogStream
+	downloadErr    error
 }
 
 func (s *requestLogClientStub) FetchRequestLogByID(context.Context, string) (*cpa.RequestLogResult, error) {
 	s.calls++
 	return s.result, s.err
+}
+
+func (s *requestLogClientStub) OpenRequestLogByID(context.Context, string) (*cpa.RequestLogStream, error) {
+	s.downloadCalls++
+	if s.downloadResult != nil || s.downloadErr != nil {
+		return s.downloadResult, s.downloadErr
+	}
+	if s.result == nil {
+		return nil, s.err
+	}
+	return &cpa.RequestLogStream{
+		StatusCode:    s.result.StatusCode,
+		Filename:      s.result.Filename,
+		ContentType:   s.result.ContentType,
+		ContentLength: int64(len(s.result.Body)),
+		Body:          io.NopCloser(bytes.NewReader(s.result.Body)),
+	}, s.err
 }
 
 func TestRequestLogServiceLoadsEventLogAndCachesByRequestID(t *testing.T) {
@@ -91,12 +115,52 @@ func TestRequestLogServiceMapsCPANotFoundToUnavailable(t *testing.T) {
 	if !errors.Is(err, service.ErrRequestLogUnavailable) {
 		t.Fatalf("expected ErrRequestLogUnavailable, got %v", err)
 	}
+
+	_, err = provider.GetUsageEventRequestLog(context.Background(), 1)
+	if !errors.Is(err, service.ErrRequestLogUnavailable) {
+		t.Fatalf("expected cached ErrRequestLogUnavailable, got %v", err)
+	}
+	if client.calls != 1 {
+		t.Fatalf("expected 404 response to be negative cached, got %d calls", client.calls)
+	}
 }
 
-func TestRequestLogServicePrunesCacheEntries(t *testing.T) {
+func TestRequestLogServiceHandlesLargePreviewAsDownloadable(t *testing.T) {
 	db := openRequestLogTestDB(t)
-	events := make([]entities.UsageEvent, 0, 140)
-	for i := 0; i < 140; i++ {
+	if _, _, err := repository.InsertUsageEvents(db, []entities.UsageEvent{{
+		EventKey:  "event-large",
+		RequestID: "req-large",
+	}}); err != nil {
+		t.Fatalf("insert usage event: %v", err)
+	}
+
+	client := &requestLogClientStub{result: &cpa.RequestLogResult{
+		StatusCode:    http.StatusOK,
+		Filename:      "large-request.log",
+		Body:          make([]byte, service.RequestLogPreviewMaxBytes()+1),
+		BodyTruncated: true,
+		ContentType:   "text/plain",
+		ContentLength: int64(service.RequestLogPreviewMaxBytes() + 1),
+	}}
+	provider := service.NewRequestLogService(db, client)
+
+	response, err := provider.GetUsageEventRequestLog(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetUsageEventRequestLog returned error: %v", err)
+	}
+	if !response.TooLarge || !response.Downloadable || response.Previewable || response.Raw != "" || len(response.Sections) != 0 {
+		t.Fatalf("unexpected large preview response: %+v", response)
+	}
+	if response.Filename != "large-request.log" {
+		t.Fatalf("unexpected filename %q", response.Filename)
+	}
+}
+
+func TestRequestLogServicePrunesCacheByTotalBytes(t *testing.T) {
+	db := openRequestLogTestDB(t)
+	eventCount := 21
+	events := make([]entities.UsageEvent, 0, eventCount)
+	for i := 0; i < eventCount; i++ {
 		events = append(events, entities.UsageEvent{
 			EventKey:  "event-prune-" + strconv.Itoa(i),
 			RequestID: "req-prune-" + strconv.Itoa(i),
@@ -109,7 +173,7 @@ func TestRequestLogServicePrunesCacheEntries(t *testing.T) {
 	client := &requestLogClientStub{result: &cpa.RequestLogResult{
 		StatusCode: http.StatusOK,
 		Filename:   "request.log",
-		Body:       []byte("=== REQUEST INFO ===\nURL: /v1/responses\n"),
+		Body:       []byte("=== REQUEST INFO ===\n" + strings.Repeat("x", 5*1024*1024-64)),
 	}}
 	provider := service.NewRequestLogService(db, client)
 
@@ -126,7 +190,48 @@ func TestRequestLogServicePrunesCacheEntries(t *testing.T) {
 		t.Fatalf("reload pruned request log: %v", err)
 	}
 	if client.calls != len(events)+1 {
-		t.Fatalf("expected oldest cache entry to be pruned and refetched, got %d calls", client.calls)
+		t.Fatalf("expected oldest byte-budget cache entry to be pruned and refetched, got %d calls", client.calls)
+	}
+}
+
+func TestRequestLogServiceDownloadFetchesRawBody(t *testing.T) {
+	db := openRequestLogTestDB(t)
+	if _, _, err := repository.InsertUsageEvents(db, []entities.UsageEvent{{
+		EventKey:  "event-download",
+		RequestID: "req-download",
+	}}); err != nil {
+		t.Fatalf("insert usage event: %v", err)
+	}
+
+	client := &requestLogClientStub{downloadResult: &cpa.RequestLogStream{
+		StatusCode:    http.StatusOK,
+		Filename:      "download.log",
+		ContentType:   "text/plain; charset=utf-8",
+		ContentLength: 7,
+		Body:          io.NopCloser(bytes.NewBufferString("raw log")),
+	}}
+	provider := service.NewRequestLogService(db, client)
+	downloader, ok := provider.(interface {
+		DownloadUsageEventRequestLog(context.Context, int64) (service.RequestLogDownload, error)
+	})
+	if !ok {
+		t.Fatalf("request log provider does not support downloads")
+	}
+
+	download, err := downloader.DownloadUsageEventRequestLog(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DownloadUsageEventRequestLog returned error: %v", err)
+	}
+	body, err := io.ReadAll(download.Body)
+	if err != nil {
+		t.Fatalf("read download body: %v", err)
+	}
+	_ = download.Body.Close()
+	if string(body) != "raw log" || download.Filename != "download.log" || download.ContentType != "text/plain; charset=utf-8" {
+		t.Fatalf("unexpected download response: %+v", download)
+	}
+	if client.downloadCalls != 1 {
+		t.Fatalf("expected one raw download call, got %d", client.downloadCalls)
 	}
 }
 

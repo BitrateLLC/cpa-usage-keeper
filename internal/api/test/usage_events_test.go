@@ -1,8 +1,10 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -32,16 +34,40 @@ type usageEventsStub struct {
 }
 
 type requestLogProviderStub struct {
-	response service.RequestLogResponse
-	err      error
-	eventID  int64
-	calls    int
+	response         service.RequestLogResponse
+	err              error
+	eventID          int64
+	calls            int
+	downloadResponse service.RequestLogDownload
+	downloadErr      error
+	downloadEventID  int64
+	downloadCalls    int
+	downloadClosed   *bool
 }
 
 func (s *requestLogProviderStub) GetUsageEventRequestLog(_ context.Context, eventID int64) (service.RequestLogResponse, error) {
 	s.eventID = eventID
 	s.calls++
 	return s.response, s.err
+}
+
+func (s *requestLogProviderStub) DownloadUsageEventRequestLog(_ context.Context, eventID int64) (service.RequestLogDownload, error) {
+	s.downloadEventID = eventID
+	s.downloadCalls++
+	if s.downloadClosed != nil && s.downloadResponse.Body != nil {
+		s.downloadResponse.Body = &trackedReadCloser{Reader: s.downloadResponse.Body, closed: s.downloadClosed}
+	}
+	return s.downloadResponse, s.downloadErr
+}
+
+type trackedReadCloser struct {
+	io.Reader
+	closed *bool
+}
+
+func (r *trackedReadCloser) Close() error {
+	*r.closed = true
+	return nil
 }
 
 func (s *usageEventsStub) GetUsageOverview(context.Context, servicedto.UsageFilter) (*servicedto.UsageOverviewSnapshot, error) {
@@ -296,6 +322,72 @@ func TestUsageEventRequestLogReturnsNotFoundWhenEventMissing(t *testing.T) {
 	}
 	if requestLogProvider.calls != 1 || requestLogProvider.eventID != 404 {
 		t.Fatalf("expected provider call with event id 404, got calls=%d eventID=%d", requestLogProvider.calls, requestLogProvider.eventID)
+	}
+}
+
+func TestUsageEventRequestLogReturnsTooLargeMetadata(t *testing.T) {
+	provider := &usageEventsStub{}
+	requestLogProvider := &requestLogProviderStub{response: service.RequestLogResponse{
+		EventID:      42,
+		RequestID:    "req-large",
+		Filename:     "large-request.log",
+		Available:    true,
+		Previewable:  false,
+		TooLarge:     true,
+		Downloadable: true,
+	}}
+	router := NewRouter(nil, nil, provider, nil, AuthConfig{}, nil, "", OptionalProviders{RequestLogs: requestLogProvider})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/usage/events/42/request-log", nil)
+	resp := httptest.NewRecorder()
+
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	if !contains(body, `"too_large":true`) || !contains(body, `"downloadable":true`) {
+		t.Fatalf("expected large log metadata in response: %s", body)
+	}
+	if contains(body, `"raw":`) || contains(body, `"sections":null`) {
+		t.Fatalf("expected too large preview response without raw body: %s", body)
+	}
+}
+
+func TestUsageEventRequestLogDownloadStreamsAttachment(t *testing.T) {
+	provider := &usageEventsStub{}
+	closed := false
+	requestLogProvider := &requestLogProviderStub{downloadResponse: service.RequestLogDownload{
+		EventID:      42,
+		RequestID:    "req-log-42",
+		Filename:     "error-v1-responses-req-log-42.log",
+		ContentType:  "text/plain; charset=utf-8",
+		Body:         io.NopCloser(bytes.NewBufferString("=== REQUEST INFO ===\nURL: /v1/responses\n")),
+		Downloadable: true,
+	}, downloadClosed: &closed}
+	router := NewRouter(nil, nil, provider, nil, AuthConfig{}, nil, "", OptionalProviders{RequestLogs: requestLogProvider})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/usage/events/42/request-log/download", nil)
+	resp := httptest.NewRecorder()
+
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if !contains(resp.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("expected text attachment content type, got %q", resp.Header().Get("Content-Type"))
+	}
+	if !contains(resp.Header().Get("Content-Disposition"), `filename="error-v1-responses-req-log-42.log"`) {
+		t.Fatalf("expected request log attachment filename, got %q", resp.Header().Get("Content-Disposition"))
+	}
+	if resp.Body.String() != "=== REQUEST INFO ===\nURL: /v1/responses\n" {
+		t.Fatalf("unexpected body: %s", resp.Body.String())
+	}
+	if !closed {
+		t.Fatalf("expected download stream to be closed")
+	}
+	if requestLogProvider.downloadCalls != 1 || requestLogProvider.downloadEventID != 42 {
+		t.Fatalf("expected download provider call with event id 42, got calls=%d eventID=%d", requestLogProvider.downloadCalls, requestLogProvider.downloadEventID)
 	}
 }
 

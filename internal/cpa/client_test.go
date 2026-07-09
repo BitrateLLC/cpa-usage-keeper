@@ -90,6 +90,34 @@ func TestFetchRequestLogByIDDownloadsFileWithBearerToken(t *testing.T) {
 	}
 }
 
+func TestFetchRequestLogByIDLimitsPreviewBody(t *testing.T) {
+	previewLimit := int64(16)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Disposition", `attachment; filename="large-request.log"`)
+		_, _ = w.Write([]byte("0123456789abcdefX"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "management-secret", 2*time.Second, false)
+	result, err := client.fetchRequestLogByID(context.Background(), "req-large", previewLimit)
+
+	if err != nil {
+		t.Fatalf("fetchRequestLogByID returned error: %v", err)
+	}
+	if result.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", result.StatusCode)
+	}
+	if !result.BodyTruncated {
+		t.Fatalf("expected oversized response to be marked truncated")
+	}
+	if len(result.Body) != int(previewLimit+1) {
+		t.Fatalf("expected limited body length %d, got %d", previewLimit+1, len(result.Body))
+	}
+	if result.Filename != "large-request.log" {
+		t.Fatalf("unexpected filename %q", result.Filename)
+	}
+}
+
 func TestFetchManagementAPIKeysAllowsEmptyArray(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

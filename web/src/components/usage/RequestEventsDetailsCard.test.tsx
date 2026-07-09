@@ -266,6 +266,19 @@ describe('RequestEventsDetailsCard pagination', () => {
     expect(html).toMatch(/<button[^>]*>.*Success.*<\/button>/);
   });
 
+  it('keeps the Result badge label stable while a request log loads', () => {
+    const html = renderCard({
+      events: [{ ...events[0], request_id: 'req-log-101' }],
+      onRequestLogOpen: () => undefined,
+      requestLogLoadingEventId: '101',
+    });
+
+    expect(html).toContain('aria-label="Success. Loading request log"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toMatch(/<button[^>]*>.*Success.*<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*>.*Loading\.\.\..*<\/button>/);
+  });
+
   it('renders request log content without request id or cache metadata', () => {
     const html = renderCard({
       requestLogResponse: {
@@ -285,12 +298,40 @@ describe('RequestEventsDetailsCard pagination', () => {
 
     expect(html).toContain('Request Info');
     expect(html).toContain('API Response Error');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('_requestEventsLogSectionChevron_');
+    expect(html).toContain('_requestEventsLogSectionPanel_');
     expect(html).toContain('URL: /v1/responses');
     expect(html).not.toContain('Request ID');
     expect(html).not.toContain('Request ID: req-log-101');
     expect(html).not.toContain('<span>Cached</span>');
     expect(html).not.toContain('<span>Fresh</span>');
     expect(html).not.toContain('preview-req-log-101.log');
+  });
+
+  it('renders a compact large-log download prompt without opening log sections', () => {
+    const html = renderCard({
+      requestLogResponse: {
+        event_id: '101',
+        request_id: 'req-log-101',
+        filename: 'large-request.log',
+        cached: false,
+        available: true,
+        previewable: false,
+        too_large: true,
+        downloadable: true,
+        sections: [],
+      },
+      onRequestLogClose: () => undefined,
+    });
+
+    expect(html).toContain('Request Log Too Large');
+    expect(html).toContain('Download Raw Log');
+    expect(html).toContain('Cancel');
+    expect(html).toContain('_requestEventsLargeLogModal_');
+    expect(html).toContain('_requestEventsLargeLogPrompt_');
+    expect(html).not.toContain('_requestEventsLogSections_');
   });
 
   it('keeps selected filters visible when backend options do not include them', () => {

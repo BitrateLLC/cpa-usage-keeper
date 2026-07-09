@@ -26,10 +26,20 @@ type Client struct {
 }
 
 type RequestLogResult struct {
-	StatusCode  int
-	Body        []byte
-	Filename    string
-	ContentType string
+	StatusCode    int
+	Body          []byte
+	Filename      string
+	ContentType   string
+	ContentLength int64
+	BodyTruncated bool
+}
+
+type RequestLogStream struct {
+	StatusCode    int
+	Body          io.ReadCloser
+	Filename      string
+	ContentType   string
+	ContentLength int64
 }
 
 type authFileStatusRequest struct {
@@ -138,30 +148,17 @@ func NewClient(baseURL, managementKey string, timeout time.Duration, tlsSkipVeri
 }
 
 func (c *Client) FetchRequestLogByID(ctx context.Context, requestID string) (*RequestLogResult, error) {
-	result := &RequestLogResult{}
-	if c == nil {
-		return result, fmt.Errorf("cpa client is nil")
-	}
-	if c.baseURL == "" {
-		return result, fmt.Errorf("cpa base url is required")
-	}
-	if c.managementKey == "" {
-		return result, fmt.Errorf("cpa management key is required")
-	}
-	requestID = strings.TrimSpace(requestID)
-	if requestID == "" {
-		return result, fmt.Errorf("request id is required")
-	}
-	if strings.ContainsAny(requestID, "/\\") {
-		return result, fmt.Errorf("request id is invalid")
-	}
+	return c.fetchRequestLogByID(ctx, requestID, defaultRequestLogPreviewMaxBytes)
+}
 
-	path := cpaManagementRequestLogByIDEndpoint + "/" + url.PathEscape(requestID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+const defaultRequestLogPreviewMaxBytes int64 = 5 * 1024 * 1024
+
+func (c *Client) fetchRequestLogByID(ctx context.Context, requestID string, maxBodyBytes int64) (*RequestLogResult, error) {
+	result := &RequestLogResult{}
+	req, err := c.newRequestLogRequest(ctx, requestID)
 	if err != nil {
-		return result, fmt.Errorf("build management request log request: %w", err)
+		return result, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.managementKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -169,7 +166,11 @@ func (c *Client) FetchRequestLogByID(ctx context.Context, requestID string) (*Re
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	reader := io.Reader(resp.Body)
+	if maxBodyBytes > 0 {
+		reader = io.LimitReader(resp.Body, maxBodyBytes+1)
+	}
+	body, err := io.ReadAll(reader)
 	if err != nil {
 		result.StatusCode = resp.StatusCode
 		return result, fmt.Errorf("read management request log response: %w", err)
@@ -178,10 +179,68 @@ func (c *Client) FetchRequestLogByID(ctx context.Context, requestID string) (*Re
 	result.Body = body
 	result.ContentType = strings.TrimSpace(resp.Header.Get("Content-Type"))
 	result.Filename = filenameFromContentDisposition(resp.Header.Get("Content-Disposition"))
+	result.ContentLength = resp.ContentLength
+	if result.ContentLength < 0 {
+		result.ContentLength = int64(len(body))
+	}
+	if maxBodyBytes > 0 && int64(len(body)) > maxBodyBytes {
+		result.BodyTruncated = true
+		result.ContentLength = int64(len(body))
+	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return result, fmt.Errorf("management request log request returned status %d", resp.StatusCode)
 	}
 	return result, nil
+}
+
+func (c *Client) OpenRequestLogByID(ctx context.Context, requestID string) (*RequestLogStream, error) {
+	result := &RequestLogStream{}
+	req, err := c.newRequestLogRequest(ctx, requestID)
+	if err != nil {
+		return result, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return result, fmt.Errorf("request management request log: %w", err)
+	}
+	result.StatusCode = resp.StatusCode
+	result.ContentType = strings.TrimSpace(resp.Header.Get("Content-Type"))
+	result.Filename = filenameFromContentDisposition(resp.Header.Get("Content-Disposition"))
+	result.ContentLength = resp.ContentLength
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		_ = resp.Body.Close()
+		return result, fmt.Errorf("management request log request returned status %d", resp.StatusCode)
+	}
+	result.Body = resp.Body
+	return result, nil
+}
+
+func (c *Client) newRequestLogRequest(ctx context.Context, requestID string) (*http.Request, error) {
+	if c == nil {
+		return nil, fmt.Errorf("cpa client is nil")
+	}
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("cpa base url is required")
+	}
+	if c.managementKey == "" {
+		return nil, fmt.Errorf("cpa management key is required")
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return nil, fmt.Errorf("request id is required")
+	}
+	if strings.ContainsAny(requestID, "/\\") {
+		return nil, fmt.Errorf("request id is invalid")
+	}
+
+	path := cpaManagementRequestLogByIDEndpoint + "/" + url.PathEscape(requestID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build management request log request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.managementKey)
+	return req, nil
 }
 
 func filenameFromContentDisposition(value string) string {
