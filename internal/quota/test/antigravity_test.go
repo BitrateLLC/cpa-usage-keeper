@@ -121,7 +121,7 @@ func TestAntigravityProviderReturnsSuccessfulEmptyQuotaAfterAllEndpoints(t *test
 }
 
 func TestAntigravityProviderNormalizesFiniteQuotaFractions(t *testing.T) {
-	body := `{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"percent","window":"5h","remainingFraction":"72%"},{"bucketId":"nan","window":"5h","remainingFraction":"NaN"},{"bucketId":"infinity","window":"5h","remainingFraction":"+Inf"},{"bucketId":"decimal","window":"weekly","remainingFraction":0.5}]}]}`
+	body := `{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"percent","window":"5h","remainingFraction":"72%"},{"bucketId":"nan","window":"5h","remainingFraction":"NaN"},{"bucketId":"infinity","window":"5h","remainingFraction":"+Inf"},{"bucketId":"invalid","window":"5h","remainingFraction":"not-a-number"},{"bucketId":"decimal","window":"weekly","remainingFraction":0.5}]}]}`
 	caller := &recordingManagementCaller{responses: []*apicall.Response{{
 		StatusCode: 200,
 		BodyText:   body,

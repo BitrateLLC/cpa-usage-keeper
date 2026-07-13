@@ -592,8 +592,11 @@ func quotaFractionPtrField(object map[string]json.RawMessage, keys ...string) *f
 			scale = 0.01
 		}
 		parsed, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			continue
+		}
 		parsed *= scale
-		if err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0) {
+		if !math.IsNaN(parsed) && !math.IsInf(parsed, 0) {
 			return &parsed
 		}
 	}
